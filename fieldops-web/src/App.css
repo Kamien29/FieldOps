@@ -1,0 +1,158 @@
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f4f6fa;
+  color: #172033;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.aplikacja {
+  width: min(100% - 32px, 1000px);
+  margin: 40px auto;
+}
+
+.naglowek,
+.lista-naglowek {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.nadtytul {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+h1 {
+  margin: 6px 0;
+  font-size: 36px;
+}
+
+h2 {
+  margin-top: 0;
+}
+
+.licznik,
+.status {
+  background: #e0eafe;
+  color: #1d4ed8;
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+}
+
+.panel,
+.lista {
+  background: white;
+  padding: 24px;
+  margin-top: 24px;
+  border-radius: 16px;
+  box-shadow: 0 4px 18px #1720330a;
+}
+
+form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d8deea;
+  border-radius: 8px;
+  background: white;
+}
+
+button {
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+}
+
+form button {
+  align-self: end;
+}
+
+.zlecenie {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 0;
+  border-bottom: 1px solid #e8ebf2;
+}
+
+.zlecenie:last-child {
+  border-bottom: 0;
+}
+
+.zlecenie h3 {
+  margin: 0 0 8px;
+}
+
+.zlecenie p {
+  margin: 5px 0;
+  color: #5e687b;
+}
+
+.status {
+  display: inline-block;
+  margin-top: 8px;
+}
+
+.akcje {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button.usun {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+@media (max-width: 700px) {
+  form {
+    grid-template-columns: 1fr;
+  }
+
+  .zlecenie,
+  .naglowek {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .lista-naglowek {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .akcje {
+    width: 100%;
+  }
+}
