@@ -5,12 +5,9 @@ export default function AppLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  async function handleLogout() {
-    try {
-      await logout()
-    } finally {
-      navigate('/login', { replace: true })
-    }
+  function handleLogout() {
+    logout()
+    navigate('/login', { replace: true })
   }
 
   const displayName = user?.name || user?.email || 'Użytkownik'

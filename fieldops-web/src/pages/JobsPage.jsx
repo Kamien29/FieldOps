@@ -8,6 +8,7 @@ export default function JobsPage() {
   const [filter, setFilter] = useState('ALL')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [reload, setReload] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -35,11 +36,11 @@ export default function JobsPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [reload])
 
   const visibleJobs = useMemo(() => {
     if (filter === 'ALL') return jobs
-    return jobs.filter((job) => String(job.status).toUpperCase() === filter)
+    return jobs.filter((job) => String(job.status).toLowerCase() === filter)
   }, [jobs, filter])
 
   return (
@@ -77,6 +78,7 @@ export default function JobsPage() {
           {error}
         </p>
       ) : null}
+      {error ? <button type="button" onClick={() => setReload((value) => value + 1)}>Spróbuj ponownie</button> : null}
       {!loading && !error && visibleJobs.length === 0 ? (
         <p className="empty">Brak zleceń do wyświetlenia.</p>
       ) : null}

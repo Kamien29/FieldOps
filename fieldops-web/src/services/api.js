@@ -1,3 +1,5 @@
+// Jedyne miejsce, w którym aplikacja woła fetch. Kontrakt: docs/API.md backendu.
+// Token (Bearer) trzymany wyłącznie w pamięci modułu – nie trafia do localStorage.
 let accessToken = null
 
 export function setAccessToken(token) {
@@ -17,40 +19,41 @@ export class ApiError extends Error {
   }
 }
 
+const NETWORK_MESSAGE = 'Nie udało się połączyć z serwerem. Uruchom backend i spróbuj ponownie.'
+
+// Backend zwraca { error: "<kod>" } – tłumaczymy znane kody na czytelne komunikaty.
+const ERROR_MESSAGES = {
+  invalid_credentials: 'Nieprawidłowy e-mail lub hasło.',
+  invalid_credentials_format: 'Podaj poprawny e-mail i hasło.',
+  unauthorized: 'Sesja wygasła. Zaloguj się ponownie.',
+  job_not_found: 'Nie znaleziono zlecenia.',
+  not_found: 'Nie znaleziono zasobu.',
+  invalid_json: 'Serwer odrzucił żądanie (niepoprawny JSON).',
+  payload_too_large: 'Przesyłane dane są zbyt duże.',
+  internal_error: 'Wystąpił błąd serwera. Spróbuj ponownie później.',
+}
+
 function extractMessage(payload, status) {
   if (status === 0 || status === 502 || status === 503 || status === 504) {
-    return 'Nie udało się połączyć z serwerem. Uruchom backend i spróbuj ponownie.'
+    return NETWORK_MESSAGE
   }
-
-  if (payload == null) {
-    return status === 401
-      ? 'Nieprawidłowy e-mail lub hasło.'
-      : `Żądanie nie powiodło się (kod ${status}).`
-  }
-
-  if (typeof payload === 'string' && payload.trim()) {
-    return payload
-  }
-
-  if (typeof payload === 'object') {
+  if (payload && typeof payload === 'object') {
+    if (typeof payload.error === 'string' && ERROR_MESSAGES[payload.error]) {
+      return ERROR_MESSAGES[payload.error]
+    }
     if (typeof payload.message === 'string' && payload.message.trim()) {
       return payload.message
     }
     if (typeof payload.error === 'string' && payload.error.trim()) {
       return payload.error
     }
-    if (Array.isArray(payload.errors) && payload.errors.length > 0) {
-      return payload.errors
-        .map((item) => (typeof item === 'string' ? item : item.message))
-        .filter(Boolean)
-        .join(' ')
-    }
   }
-
+  if (typeof payload === 'string' && payload.trim()) {
+    return payload
+  }
   if (status === 401) {
-    return 'Nieprawidłowy e-mail lub hasło.'
+    return ERROR_MESSAGES.invalid_credentials
   }
-
   return `Żądanie nie powiodło się (kod ${status}).`
 }
 
@@ -59,7 +62,6 @@ async function parseBody(response) {
   if (contentType.includes('application/json')) {
     return response.json()
   }
-
   const text = await response.text()
   return text ? text : null
 }
@@ -70,7 +72,6 @@ export async function request(path, options = {}) {
     ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     ...headers,
   }
-
   if (accessToken) {
     requestHeaders.Authorization = `Bearer ${accessToken}`
   }
@@ -78,58 +79,38 @@ export async function request(path, options = {}) {
   let response
   try {
     response = await fetch(path, {
-      credentials: 'include',
       headers: requestHeaders,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       ...rest,
     })
   } catch {
-    throw new ApiError(
-      0,
-      'Nie udało się połączyć z serwerem. Uruchom backend i spróbuj ponownie.',
-    )
+    throw new ApiError(0, NETWORK_MESSAGE)
   }
 
-  const payload = await parseBody(response)
+  let payload = null
+  try {
+    payload = await parseBody(response)
+  } catch {
+    payload = null
+  }
 
   if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      extractMessage(payload, response.status),
-      payload,
-    )
+    if (response.status === 401 && path !== '/api/login') {
+      setAccessToken(null)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('fieldops:session-expired'))
+      }
+    }
+    throw new ApiError(response.status, extractMessage(payload, response.status), payload)
   }
 
   return payload
 }
 
-export function unwrapUser(payload) {
-  if (!payload || typeof payload !== 'object') {
-    return payload
+/** GET /api/jobs → { serverTime, jobs: [...] }. Zwraca samą tablicę surowych zleceń. */
+export function unwrapJobs(payload) {
+  if (payload && typeof payload === 'object' && Array.isArray(payload.jobs)) {
+    return payload.jobs
   }
-
-  return payload.user ?? payload.data ?? payload
-}
-
-export function unwrapToken(payload) {
-  if (!payload || typeof payload !== 'object') {
-    return null
-  }
-
-  return payload.token ?? payload.accessToken ?? payload.access_token ?? null
-}
-
-export function unwrapList(payload) {
-  if (Array.isArray(payload)) {
-    return payload
-  }
-
-  if (payload && typeof payload === 'object') {
-    if (Array.isArray(payload.jobs)) return payload.jobs
-    if (Array.isArray(payload.data)) return payload.data
-    if (Array.isArray(payload.content)) return payload.content
-    if (Array.isArray(payload.items)) return payload.items
-  }
-
   return []
 }

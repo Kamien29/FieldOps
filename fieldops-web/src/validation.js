@@ -47,6 +47,9 @@ export function validateJob(values) {
   if (!values.address.trim()) {
     errors.address = 'Podaj adres wykonania.'
   }
+  if (!values.dueDate) {
+    errors.dueDate = 'Podaj termin zlecenia.'
+  }
   if (!values.status) {
     errors.status = 'Wybierz status.'
   }

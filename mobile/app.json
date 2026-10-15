@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "FieldOps",
+    "slug": "fieldops",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.example.fieldops"
+    },
+    "android": {
+      "package": "com.example.fieldops",
+      "permissions": ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-secure-store",
+      ["expo-camera", { "cameraPermission": "FieldOps potrzebuje aparatu do skanowania kodów QR urządzeń." }],
+      ["expo-image-picker", { "cameraPermission": "FieldOps potrzebuje aparatu do robienia zdjęć w raporcie." }],
+      ["expo-location", { "locationWhenInUsePermission": "FieldOps zapisuje lokalizację wykonania usługi w raporcie." }]
+    ]
+  }
+}

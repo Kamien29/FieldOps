@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getJobById, statusLabel, statusTone } from '../services/jobs.js'
+import { formatDateTime } from '../utils/format.js'
 
 export default function JobDetailsPage() {
   const { jobId } = useParams()
@@ -64,10 +65,26 @@ export default function JobDetailsPage() {
               <dt>Adres</dt>
               <dd>{job.address}</dd>
             </div>
+            {job.description ? (
+              <div>
+                <dt>Opis</dt>
+                <dd>{job.description}</dd>
+              </div>
+            ) : null}
             <div>
-              <dt>Opis</dt>
-              <dd>{job.description}</dd>
+              <dt>Termin</dt>
+              <dd>{formatDateTime(job.dueDate)}</dd>
             </div>
+            <div>
+              <dt>Ostatnia zmiana</dt>
+              <dd>{formatDateTime(job.updatedAt)}</dd>
+            </div>
+            {job.report?.note ? (
+              <div>
+                <dt>Notatka z raportu</dt>
+                <dd>{job.report.note}</dd>
+              </div>
+            ) : null}
           </dl>
         </article>
       ) : null}

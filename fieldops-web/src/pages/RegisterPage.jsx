@@ -1,11 +1,9 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext.jsx'
+import { Link } from 'react-router-dom'
+import { SUPPORTED, UNSUPPORTED_MESSAGE } from '../services/capabilities.js'
 import { validateRegister } from '../validation.js'
 
 export default function RegisterPage() {
-  const { register, login } = useAuth()
-  const navigate = useNavigate()
   const [values, setValues] = useState({
     name: '',
     email: '',
@@ -14,7 +12,6 @@ export default function RegisterPage() {
   })
   const [errors, setErrors] = useState({})
   const [apiError, setApiError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
 
   function updateField(event) {
     const { name, value } = event.target
@@ -30,23 +27,8 @@ export default function RegisterPage() {
       return
     }
 
-    setSubmitting(true)
-    try {
-      const credentials = {
-        name: values.name.trim(),
-        email: values.email.trim(),
-        password: values.password,
-      }
-      const user = await register(credentials)
-      if (!user?.email) {
-        await login({ email: credentials.email, password: credentials.password })
-      }
-      navigate('/jobs', { replace: true })
-    } catch (error) {
-      setApiError(error.message || 'Nie udało się utworzyć konta.')
-    } finally {
-      setSubmitting(false)
-    }
+    // Backend nie ma endpointu rejestracji (patrz services/capabilities.js).
+    setApiError(UNSUPPORTED_MESSAGE)
   }
 
   return (
@@ -55,6 +37,12 @@ export default function RegisterPage() {
         <p className="eyebrow">System serwisowy</p>
         <h1>FieldOps</h1>
         <h2>Rejestracja</h2>
+
+        {!SUPPORTED.register ? (
+          <p className="banner-error" role="status">
+            {UNSUPPORTED_MESSAGE}
+          </p>
+        ) : null}
 
         {apiError ? (
           <p className="banner-error" role="alert">
@@ -138,8 +126,8 @@ export default function RegisterPage() {
             ) : null}
           </div>
 
-          <button type="submit" disabled={submitting}>
-            {submitting ? 'Tworzenie konta…' : 'Zarejestruj'}
+          <button type="submit" disabled={!SUPPORTED.register}>
+            Zarejestruj
           </button>
         </form>
 

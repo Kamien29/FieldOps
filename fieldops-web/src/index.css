@@ -201,6 +201,14 @@ button:disabled {
   border-bottom: 0;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 20px;
+}
+
 .job-card h3 {
   margin-bottom: 8px;
 }

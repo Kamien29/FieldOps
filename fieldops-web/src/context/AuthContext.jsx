@@ -1,73 +1,37 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { ApiError } from '../services/api.js'
-import { getCurrentUser, login as loginRequest, logout as logoutRequest, register as registerRequest } from '../services/auth.js'
+import { login as loginRequest, logout as logoutRequest } from '../services/auth.js'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
+  // Backend nie ma /me ani ciasteczek sesyjnych, a token jest tylko w pamięci,
+  // więc po odświeżeniu strony użytkownik loguje się ponownie.
   const [user, setUser] = useState(null)
-  const [initializing, setInitializing] = useState(true)
 
   useEffect(() => {
-    let cancelled = false
-
-    async function restoreSession() {
-      try {
-        const currentUser = await getCurrentUser()
-        if (!cancelled) {
-          setUser(currentUser)
-        }
-      } catch {
-        if (!cancelled) {
-          setUser(null)
-        }
-      } finally {
-        if (!cancelled) {
-          setInitializing(false)
-        }
-      }
+    function expireSession() {
+      setUser(null)
     }
-
-    restoreSession()
-    return () => {
-      cancelled = true
-    }
+    window.addEventListener('fieldops:session-expired', expireSession)
+    return () => window.removeEventListener('fieldops:session-expired', expireSession)
   }, [])
 
   const value = useMemo(
     () => ({
       user,
-      initializing,
+      initializing: false,
       isAuthenticated: Boolean(user),
       async login(credentials) {
         const nextUser = await loginRequest(credentials)
-        const resolvedUser = nextUser?.email ? nextUser : await getCurrentUser()
-        setUser(resolvedUser)
-        return resolvedUser
+        setUser(nextUser)
+        return nextUser
       },
-      async register(input) {
-        const nextUser = await registerRequest(input)
-        if (nextUser?.email) {
-          setUser(nextUser)
-          return nextUser
-        }
-        try {
-          const currentUser = await getCurrentUser()
-          setUser(currentUser)
-          return currentUser
-        } catch (error) {
-          if (error instanceof ApiError && error.status === 401) {
-            return nextUser
-          }
-          throw error
-        }
-      },
-      async logout() {
-        await logoutRequest()
+      logout() {
+        logoutRequest()
         setUser(null)
       },
     }),
-    [user, initializing],
+    [user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

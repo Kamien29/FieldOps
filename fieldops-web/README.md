@@ -1,16 +1,49 @@
-# React + Vite
+# FieldOps – aplikacja webowa
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + Vite 8 + React Router 7. Korzysta z backendu z katalogu `../backend` (kontrakt: `../docs/API.md`).
 
-Currently, two official plugins are available:
+## Uruchomienie
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```sh
+# 1. backend (Node >= 22.13, port 3000, seed: jan@fieldops.local / anna@fieldops.local, hasło fieldops123)
+cd backend && npm start
 
-## React Compiler
+# 2. web (w drugim terminalu)
+cd fieldops-web
+npm ci
+npm run dev        # http://localhost:5173, żądania /api idą przez proxy na http://localhost:3000
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Inny adres backendu: `VITE_API_PROXY=http://host:port npm run dev`.
 
-## Expanding the Oxlint configuration
+Kontrole jakości: `npm test`, `npm run lint`, `npm run build`.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Kontrakt API używany przez web
+
+| Operacja | Wywołanie |
+|---|---|
+| logowanie | `POST /api/login` → `{ token, user }` |
+| lista zleceń | `GET /api/jobs` → `{ serverTime, jobs }` (wszystkie zlecenia użytkownika, bez paginacji) |
+| szczegóły zlecenia | brak `GET /api/jobs/:id` – wybierane z listy |
+| wylogowanie | tylko lokalnie (backend ma bezstanowy token ważny 30 dni) |
+
+Całą komunikację zawiera `src/services/api.js` (jedyny `fetch`), `auth.js` i `jobs.js`.
+
+### Mapowanie modelu (granica aplikacji: `services/jobs.js → mapJob`)
+
+| Frontend | Backend |
+|---|---|
+| `id`, `title`, `address`, `status`, `updatedAt` | bez zmian |
+| `clientName` | `customer` |
+| `dueDate` | `scheduledAt` |
+| `description`, `createdAt` | backend ich nie zwraca (puste / `null`) |
+
+Statusy zgodne z backendem: `new`, `in_progress`, `done` (początkowy: `new`, nie `TODO`).
+
+## Sesja i bezpieczeństwo
+
+Token Bearer jest trzymany tylko w pamięci (nie w `localStorage`), więc **odświeżenie strony wymaga ponownego logowania** – backend nie ma `/me` ani ciasteczek HttpOnly. Wygaśnięcie sesji (401) wylogowuje użytkownika. Autoryzacja i izolacja zleceń są egzekwowane przez backend.
+
+## Znane braki (backend nie udostępnia endpointów)
+
+Ekrany **Rejestracja** i **Nowe zlecenie** są w interfejsie, ale mają wyłączony przycisk i komunikat wyjaśniający – backend nie ma `register` ani `POST /api/jobs`. Flagi: `src/services/capabilities.js`.

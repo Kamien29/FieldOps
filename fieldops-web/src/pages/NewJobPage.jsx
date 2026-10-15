@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import JobForm from '../components/JobForm.jsx'
+import { SUPPORTED, UNSUPPORTED_MESSAGE } from '../services/capabilities.js'
 import { createJob } from '../services/jobs.js'
 
 export default function NewJobPage() {
@@ -24,12 +25,17 @@ export default function NewJobPage() {
   return (
     <section className="panel">
       <h2>Nowe zlecenie</h2>
+      {!SUPPORTED.createJob ? (
+        <p className="banner-error" role="status">
+          {UNSUPPORTED_MESSAGE}
+        </p>
+      ) : null}
       {error ? (
         <p className="banner-error" role="alert">
           {error}
         </p>
       ) : null}
-      <JobForm onSubmit={handleSubmit} submitting={submitting} />
+      <JobForm onSubmit={handleSubmit} submitting={submitting} disabled={!SUPPORTED.createJob} />
     </section>
   )
 }

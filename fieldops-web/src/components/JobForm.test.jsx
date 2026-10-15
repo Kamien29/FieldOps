@@ -12,13 +12,15 @@ describe('JobForm', () => {
         description: '',
         clientName: '',
         address: '',
-        status: 'NEW',
+        dueDate: '',
+        status: 'new',
       }),
     ).toMatchObject({
       title: expect.any(String),
       description: expect.any(String),
       clientName: expect.any(String),
       address: expect.any(String),
+      dueDate: expect.any(String),
     })
   })
 
@@ -41,6 +43,7 @@ describe('JobForm', () => {
     await user.type(screen.getByLabelText('Tytuł'), '  Naprawa pompy  ')
     await user.type(screen.getByLabelText('Opis'), 'Wymiana uszczelki')
     await user.type(screen.getByLabelText('Klient'), 'Anna Nowak')
+    await user.type(screen.getByLabelText('Termin'), '2026-11-10')
     await user.type(screen.getByLabelText('Adres'), 'Rzeszów')
     await user.click(screen.getByRole('button', { name: 'Utwórz zlecenie' }))
 
@@ -49,7 +52,8 @@ describe('JobForm', () => {
       description: 'Wymiana uszczelki',
       clientName: 'Anna Nowak',
       address: 'Rzeszów',
-      status: 'NEW',
+      dueDate: '2026-11-10',
+      status: 'new',
     })
   })
 })

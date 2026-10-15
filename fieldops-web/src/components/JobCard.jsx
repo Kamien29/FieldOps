@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { statusLabel, statusTone } from '../services/jobs.js'
+import { formatDateTime } from '../utils/format.js'
 
 export default function JobCard({ job }) {
   return (
@@ -10,6 +11,7 @@ export default function JobCard({ job }) {
         </h3>
         <p>Klient: {job.clientName}</p>
         <p>Adres: {job.address}</p>
+        <p>Termin: {formatDateTime(job.dueDate)}</p>
       </div>
       <span className={`status-badge status-${statusTone(job.status)}`}>
         {statusLabel(job.status)}

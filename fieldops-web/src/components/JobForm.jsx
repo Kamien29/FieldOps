@@ -7,10 +7,11 @@ const INITIAL = {
   description: '',
   clientName: '',
   address: '',
-  status: 'NEW',
+  dueDate: '',
+  status: 'new',
 }
 
-export default function JobForm({ onSubmit, submitting, submitLabel = 'Utwórz zlecenie' }) {
+export default function JobForm({ onSubmit, submitting, disabled = false, submitLabel = 'Utwórz zlecenie' }) {
   const [values, setValues] = useState(INITIAL)
   const [errors, setErrors] = useState({})
 
@@ -32,6 +33,7 @@ export default function JobForm({ onSubmit, submitting, submitLabel = 'Utwórz z
       description: values.description.trim(),
       clientName: values.clientName.trim(),
       address: values.address.trim(),
+      dueDate: values.dueDate,
       status: values.status,
     })
   }
@@ -108,6 +110,12 @@ export default function JobForm({ onSubmit, submitting, submitLabel = 'Utwórz z
       </div>
 
       <div className="field">
+        <label htmlFor="dueDate">Termin</label>
+        <input id="dueDate" name="dueDate" type="date" value={values.dueDate} onChange={updateField} aria-invalid={Boolean(errors.dueDate)} />
+        {errors.dueDate ? <p className="field-error" role="alert">{errors.dueDate}</p> : null}
+      </div>
+
+      <div className="field">
         <label htmlFor="status">Status</label>
         <select id="status" name="status" value={values.status} onChange={updateField}>
           {JOB_STATUSES.map((status) => (
@@ -118,7 +126,7 @@ export default function JobForm({ onSubmit, submitting, submitLabel = 'Utwórz z
         </select>
       </div>
 
-      <button type="submit" disabled={submitting}>
+      <button type="submit" disabled={submitting || disabled}>
         {submitting ? 'Zapisywanie…' : submitLabel}
       </button>
     </form>

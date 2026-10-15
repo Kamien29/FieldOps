@@ -1,49 +1,22 @@
-import { request, setAccessToken, unwrapToken, unwrapUser } from './api.js'
+import { request, setAccessToken } from './api.js'
 
-function applySession(payload) {
-  const token = unwrapToken(payload)
-  if (token) {
-    setAccessToken(token)
-  }
-  return unwrapUser(payload)
-}
-
-export async function register(input) {
-  const payload = await request('/api/auth/register', {
-    method: 'POST',
-    body: {
-      email: input.email,
-      password: input.password,
-      name: input.name || undefined,
-    },
-  })
-  return applySession(payload)
-}
-
+/** POST /api/login → { token, user: { id, name, email } } */
 export async function login(input) {
-  const payload = await request('/api/auth/login', {
+  const payload = await request('/api/login', {
     method: 'POST',
-    body: {
-      email: input.email,
-      password: input.password,
-    },
+    body: { email: input.email, password: input.password },
   })
-  return applySession(payload)
-}
-
-export async function getCurrentUser() {
-  const payload = await request('/api/auth/me')
-  return unwrapUser(payload)
-}
-
-export async function logout() {
-  try {
-    await request('/api/auth/logout', { method: 'POST' })
-  } catch (error) {
-    if (error.status && error.status !== 404) {
-      throw error
-    }
-  } finally {
-    setAccessToken(null)
+  if (!payload?.token || !payload?.user) {
+    throw new Error('Serwer zwrócił niepoprawną odpowiedź logowania.')
   }
+  setAccessToken(payload.token)
+  return payload.user
+}
+
+/**
+ * Backend nie ma endpointu wylogowania (token jest bezstanowy, ważny 30 dni),
+ * więc wylogowanie czyści tylko token po stronie klienta.
+ */
+export function logout() {
+  setAccessToken(null)
 }

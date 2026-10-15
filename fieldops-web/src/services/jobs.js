@@ -1,66 +1,71 @@
-import { request, unwrapList } from './api.js'
+import { ApiError, request, unwrapJobs } from './api.js'
+import { UNSUPPORTED_MESSAGE } from './capabilities.js'
 
+// Wartości statusów zgodne z backendem (docs/API.md).
 export const JOB_STATUSES = [
-  { value: 'NEW', label: 'Do wykonania' },
-  { value: 'IN_PROGRESS', label: 'W realizacji' },
-  { value: 'DONE', label: 'Wykonane' },
+  { value: 'new', label: 'Do wykonania' },
+  { value: 'in_progress', label: 'W realizacji' },
+  { value: 'done', label: 'Wykonane' },
 ]
 
 const STATUS_LABELS = {
   NEW: 'Do wykonania',
-  OPEN: 'Do wykonania',
   TODO: 'Do wykonania',
   IN_PROGRESS: 'W realizacji',
-  INPROGRESS: 'W realizacji',
   DONE: 'Wykonane',
-  COMPLETED: 'Wykonane',
-  CLOSED: 'Wykonane',
-  'Do wykonania': 'Do wykonania',
-  'W realizacji': 'W realizacji',
-  Wykonane: 'Wykonane',
 }
 
 export function statusLabel(status) {
   if (!status) return 'Nieznany'
-  return STATUS_LABELS[status] || STATUS_LABELS[String(status).toUpperCase()] || status
+  return STATUS_LABELS[String(status).toUpperCase()] || status
 }
 
 export function statusTone(status) {
   const normalized = String(status || '').toUpperCase()
-  if (normalized === 'DONE' || normalized === 'COMPLETED' || normalized === 'CLOSED' || status === 'Wykonane') {
-    return 'done'
-  }
-  if (normalized === 'IN_PROGRESS' || normalized === 'INPROGRESS' || status === 'W realizacji') {
-    return 'progress'
-  }
+  if (normalized === 'DONE') return 'done'
+  if (normalized === 'IN_PROGRESS') return 'progress'
   return 'new'
 }
 
-export async function getJobs() {
-  const payload = await request('/api/jobs')
-  return unwrapList(payload)
+/**
+ * Mapowanie modelu backendu na model frontendu (granica aplikacji):
+ *   customer    → clientName
+ *   scheduledAt → dueDate
+ * Backend nie zwraca `description` ani `createdAt` – pozostają puste/null.
+ */
+export function mapJob(raw) {
+  return {
+    id: raw.id,
+    title: raw.title,
+    description: raw.description ?? '',
+    clientName: raw.customer ?? '',
+    address: raw.address ?? '',
+    status: raw.status,
+    dueDate: raw.scheduledAt ?? null,
+    createdAt: raw.createdAt ?? null,
+    updatedAt: raw.updatedAt ?? null,
+    version: raw.version,
+    report: raw.report ?? null,
+  }
 }
 
+/** GET /api/jobs – backend zwraca wszystkie zlecenia użytkownika (bez paginacji). */
+export async function getJobs() {
+  const payload = await request('/api/jobs')
+  return unwrapJobs(payload).map(mapJob)
+}
+
+/** Backend nie ma GET /api/jobs/:id – szczegóły wybieramy z listy zleceń użytkownika. */
 export async function getJobById(id) {
   const jobs = await getJobs()
   const job = jobs.find((item) => String(item.id) === String(id))
   if (!job) {
-    const error = new Error('Nie znaleziono zlecenia.')
-    error.status = 404
-    throw error
+    throw new ApiError(404, 'Nie znaleziono zlecenia.')
   }
   return job
 }
 
-export async function createJob(input) {
-  return request('/api/jobs', {
-    method: 'POST',
-    body: {
-      title: input.title,
-      description: input.description,
-      clientName: input.clientName,
-      address: input.address,
-      status: input.status || 'NEW',
-    },
-  })
+/** Backend nie ma endpointu tworzenia zleceń (patrz services/capabilities.js). */
+export async function createJob() {
+  throw new ApiError(501, UNSUPPORTED_MESSAGE)
 }

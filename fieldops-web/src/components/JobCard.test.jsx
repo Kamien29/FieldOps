@@ -13,7 +13,7 @@ describe('JobCard', () => {
             title: 'Przegląd pieca',
             clientName: 'Jan Kowalski',
             address: 'Łańcut',
-            status: 'IN_PROGRESS',
+            status: 'in_progress',
           }}
         />
       </MemoryRouter>,
