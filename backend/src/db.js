@@ -16,6 +16,8 @@ export function openDb(file = process.env.DB_FILE || './data/fieldops.db') {
       assigned_to TEXT NOT NULL REFERENCES users(id),
       title TEXT NOT NULL, customer TEXT NOT NULL, address TEXT NOT NULL,
       scheduled_at TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','in_progress','done')),
       version INTEGER NOT NULL DEFAULT 1,
       updated_at TEXT NOT NULL
@@ -34,7 +36,16 @@ export function openDb(file = process.env.DB_FILE || './data/fieldops.db') {
       key TEXT PRIMARY KEY, status INTEGER NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL
     );
   `);
+  migrate(db);
   return db;
+}
+
+/** Dodaje kolumny tygodnia 1 do baz utworzonych wcześniejszą wersją schematu. */
+function migrate(db) {
+  const cols = db.prepare('PRAGMA table_info(jobs)').all().map((c) => c.name);
+  if (!cols.includes('description')) db.exec("ALTER TABLE jobs ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  if (!cols.includes('created_at')) db.exec("ALTER TABLE jobs ADD COLUMN created_at TEXT NOT NULL DEFAULT ''");
+  db.exec("UPDATE jobs SET created_at = updated_at WHERE created_at = ''");
 }
 
 export function tx(db, fn) {

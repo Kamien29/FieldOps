@@ -1,14 +1,5 @@
 // Jedyne miejsce, w którym aplikacja woła fetch. Kontrakt: docs/API.md backendu.
-// Token (Bearer) trzymany wyłącznie w pamięci modułu – nie trafia do localStorage.
-let accessToken = null
-
-export function setAccessToken(token) {
-  accessToken = token || null
-}
-
-export function getAccessToken() {
-  return accessToken
-}
+// Sesja to ciasteczko HttpOnly ustawiane przez backend – JavaScript nie widzi ani nie przechowuje tokenu.
 
 export class ApiError extends Error {
   constructor(status, message, details) {
@@ -26,6 +17,18 @@ const ERROR_MESSAGES = {
   invalid_credentials: 'Nieprawidłowy e-mail lub hasło.',
   invalid_credentials_format: 'Podaj poprawny e-mail i hasło.',
   unauthorized: 'Sesja wygasła. Zaloguj się ponownie.',
+  csrf_blocked: 'Żądanie zostało zablokowane ze względów bezpieczeństwa. Odśwież stronę.',
+  email_taken: 'Konto z tym adresem e-mail już istnieje.',
+  invalid_name: 'Podaj imię lub nazwę.',
+  invalid_email: 'Podaj poprawny adres e-mail.',
+  invalid_password: 'Hasło musi mieć od 8 do 200 znaków.',
+  invalid_title: 'Podaj tytuł zlecenia.',
+  invalid_description: 'Podaj opis zlecenia.',
+  invalid_customer: 'Podaj nazwę klienta.',
+  invalid_address: 'Podaj adres wykonania.',
+  invalid_scheduledAt: 'Podaj poprawny termin zlecenia.',
+  invalid_page: 'Niepoprawny numer strony.',
+  invalid_limit: 'Niepoprawny rozmiar strony.',
   job_not_found: 'Nie znaleziono zlecenia.',
   not_found: 'Nie znaleziono zasobu.',
   invalid_json: 'Serwer odrzucił żądanie (niepoprawny JSON).',
@@ -66,19 +69,22 @@ async function parseBody(response) {
   return text ? text : null
 }
 
+// Ścieżki, dla których 401 oznacza „brak/zła sesja”, a nie „sesja wygasła w trakcie pracy”.
+const AUTH_PATHS = ['/api/login', '/api/register', '/api/me']
+
 export async function request(path, options = {}) {
   const { body, headers, ...rest } = options
   const requestHeaders = {
+    // Nagłówek wymagany przez backend dla zmian wykonywanych na sesji z ciasteczka (ochrona CSRF).
+    'X-Requested-With': 'fieldops-web',
     ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     ...headers,
-  }
-  if (accessToken) {
-    requestHeaders.Authorization = `Bearer ${accessToken}`
   }
 
   let response
   try {
     response = await fetch(path, {
+      credentials: 'same-origin',
       headers: requestHeaders,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       ...rest,
@@ -95,22 +101,11 @@ export async function request(path, options = {}) {
   }
 
   if (!response.ok) {
-    if (response.status === 401 && path !== '/api/login') {
-      setAccessToken(null)
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('fieldops:session-expired'))
-      }
+    if (response.status === 401 && !AUTH_PATHS.includes(path) && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('fieldops:session-expired'))
     }
     throw new ApiError(response.status, extractMessage(payload, response.status), payload)
   }
 
   return payload
-}
-
-/** GET /api/jobs → { serverTime, jobs: [...] }. Zwraca samą tablicę surowych zleceń. */
-export function unwrapJobs(payload) {
-  if (payload && typeof payload === 'object' && Array.isArray(payload.jobs)) {
-    return payload.jobs
-  }
-  return []
 }

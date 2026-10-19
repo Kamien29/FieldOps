@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapJob, statusLabel, statusTone } from './jobs.js'
+import { mapJob, statusLabel, statusTone, toApiJob } from './jobs.js'
 
 describe('jobs service', () => {
   it('maps the backend job model to the frontend model', () => {
@@ -34,5 +34,23 @@ describe('jobs service', () => {
     expect(statusTone('done')).toBe('done')
     expect(statusTone('in_progress')).toBe('progress')
     expect(statusTone('new')).toBe('new')
+  })
+
+  it('maps the form model to the backend payload (clientName → customer, dueDate → ISO scheduledAt)', () => {
+    const payload = toApiJob({
+      title: 'Naprawa pompy',
+      description: 'Wymiana uszczelki',
+      clientName: 'Anna Nowak',
+      address: 'Rzeszów',
+      dueDate: '2026-11-10T09:30',
+    })
+    expect(payload).toEqual({
+      title: 'Naprawa pompy',
+      description: 'Wymiana uszczelki',
+      customer: 'Anna Nowak',
+      address: 'Rzeszów',
+      scheduledAt: new Date('2026-11-10T09:30').toISOString(),
+    })
+    expect(payload).not.toHaveProperty('status')
   })
 })

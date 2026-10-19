@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { SUPPORTED, UNSUPPORTED_MESSAGE } from '../services/capabilities.js'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext.jsx'
 import { validateRegister } from '../validation.js'
 
 export default function RegisterPage() {
+  const { register } = useAuth()
+  const navigate = useNavigate()
   const [values, setValues] = useState({
     name: '',
     email: '',
@@ -12,6 +14,7 @@ export default function RegisterPage() {
   })
   const [errors, setErrors] = useState({})
   const [apiError, setApiError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   function updateField(event) {
     const { name, value } = event.target
@@ -27,8 +30,19 @@ export default function RegisterPage() {
       return
     }
 
-    // Backend nie ma endpointu rejestracji (patrz services/capabilities.js).
-    setApiError(UNSUPPORTED_MESSAGE)
+    setSubmitting(true)
+    try {
+      await register({
+        name: values.name.trim(),
+        email: values.email.trim(),
+        password: values.password,
+      })
+      navigate('/jobs', { replace: true })
+    } catch (error) {
+      setApiError(error.message || 'Nie udało się utworzyć konta.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -38,11 +52,6 @@ export default function RegisterPage() {
         <h1>FieldOps</h1>
         <h2>Rejestracja</h2>
 
-        {!SUPPORTED.register ? (
-          <p className="banner-error" role="status">
-            {UNSUPPORTED_MESSAGE}
-          </p>
-        ) : null}
 
         {apiError ? (
           <p className="banner-error" role="alert">
@@ -126,8 +135,8 @@ export default function RegisterPage() {
             ) : null}
           </div>
 
-          <button type="submit" disabled={!SUPPORTED.register}>
-            Zarejestruj
+          <button type="submit" disabled={submitting}>
+            {submitting ? 'Tworzenie konta…' : 'Zarejestruj'}
           </button>
         </form>
 

@@ -1,7 +1,8 @@
-import { ApiError, request, unwrapJobs } from './api.js'
-import { UNSUPPORTED_MESSAGE } from './capabilities.js'
+import { ApiError, request } from './api.js'
 
-// Wartości statusów zgodne z backendem (docs/API.md).
+export const DEFAULT_PAGE_SIZE = 10
+
+// Wartości statusów zgodne z backendem (docs/API.md). Nowe zlecenie zawsze zaczyna jako 'new'.
 export const JOB_STATUSES = [
   { value: 'new', label: 'Do wykonania' },
   { value: 'in_progress', label: 'W realizacji' },
@@ -31,7 +32,6 @@ export function statusTone(status) {
  * Mapowanie modelu backendu na model frontendu (granica aplikacji):
  *   customer    → clientName
  *   scheduledAt → dueDate
- * Backend nie zwraca `description` ani `createdAt` – pozostają puste/null.
  */
 export function mapJob(raw) {
   return {
@@ -49,23 +49,42 @@ export function mapJob(raw) {
   }
 }
 
-/** GET /api/jobs – backend zwraca wszystkie zlecenia użytkownika (bez paginacji). */
-export async function getJobs() {
-  const payload = await request('/api/jobs')
-  return unwrapJobs(payload).map(mapJob)
-}
-
-/** Backend nie ma GET /api/jobs/:id – szczegóły wybieramy z listy zleceń użytkownika. */
-export async function getJobById(id) {
-  const jobs = await getJobs()
-  const job = jobs.find((item) => String(item.id) === String(id))
-  if (!job) {
-    throw new ApiError(404, 'Nie znaleziono zlecenia.')
+/** Odwrotne mapowanie dla POST /api/jobs. `dueDate` z formularza (datetime-local) → ISO. */
+export function toApiJob(input) {
+  const due = new Date(input.dueDate)
+  return {
+    title: input.title,
+    description: input.description,
+    customer: input.clientName,
+    address: input.address,
+    scheduledAt: Number.isNaN(due.getTime()) ? input.dueDate : due.toISOString(),
   }
-  return job
 }
 
-/** Backend nie ma endpointu tworzenia zleceń (patrz services/capabilities.js). */
-export async function createJob() {
-  throw new ApiError(501, UNSUPPORTED_MESSAGE)
+/** GET /api/jobs?page&limit – lista zleceń zalogowanego użytkownika, posortowana po terminie. */
+export async function getJobs(page = 1, pageSize = DEFAULT_PAGE_SIZE) {
+  const query = new URLSearchParams({ page: String(page), limit: String(pageSize) })
+  const payload = await request(`/api/jobs?${query}`)
+  const meta = payload.pagination
+  return {
+    items: payload.jobs.map(mapJob),
+    page: meta.page,
+    pageSize: meta.limit,
+    total: meta.total,
+    totalPages: meta.totalPages,
+  }
 }
+
+/** GET /api/jobs/:id */
+export async function getJobById(id) {
+  const payload = await request(`/api/jobs/${encodeURIComponent(id)}`)
+  return mapJob(payload.job)
+}
+
+/** POST /api/jobs – status początkowy ustawia backend ('new'). */
+export async function createJob(input) {
+  const payload = await request('/api/jobs', { method: 'POST', body: toApiJob(input) })
+  return mapJob(payload.job)
+}
+
+export { ApiError }

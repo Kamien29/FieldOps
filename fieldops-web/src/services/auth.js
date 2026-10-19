@@ -1,22 +1,30 @@
-import { request, setAccessToken } from './api.js'
+import { request } from './api.js'
 
-/** POST /api/login → { token, user: { id, name, email } } */
+/** POST /api/register → 201 { token, user }; backend od razu zakłada sesję (ciasteczko). */
+export async function register(input) {
+  const payload = await request('/api/register', {
+    method: 'POST',
+    body: { name: input.name, email: input.email, password: input.password },
+  })
+  return payload.user
+}
+
+/** POST /api/login → { token, user }; sesję przechowuje ciasteczko HttpOnly. */
 export async function login(input) {
   const payload = await request('/api/login', {
     method: 'POST',
     body: { email: input.email, password: input.password },
   })
-  if (!payload?.token || !payload?.user) {
-    throw new Error('Serwer zwrócił niepoprawną odpowiedź logowania.')
-  }
-  setAccessToken(payload.token)
   return payload.user
 }
 
-/**
- * Backend nie ma endpointu wylogowania (token jest bezstanowy, ważny 30 dni),
- * więc wylogowanie czyści tylko token po stronie klienta.
- */
-export function logout() {
-  setAccessToken(null)
+/** GET /api/me → { user } (odtworzenie sesji po odświeżeniu strony). */
+export async function getCurrentUser() {
+  const payload = await request('/api/me')
+  return payload.user
+}
+
+/** POST /api/logout – backend kasuje ciasteczko sesji. */
+export async function logout() {
+  await request('/api/logout', { method: 'POST' })
 }

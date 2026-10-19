@@ -22,28 +22,33 @@ Kontrole jakości: `npm test`, `npm run lint`, `npm run build`.
 
 | Operacja | Wywołanie |
 |---|---|
-| logowanie | `POST /api/login` → `{ token, user }` |
-| lista zleceń | `GET /api/jobs` → `{ serverTime, jobs }` (wszystkie zlecenia użytkownika, bez paginacji) |
-| szczegóły zlecenia | brak `GET /api/jobs/:id` – wybierane z listy |
-| wylogowanie | tylko lokalnie (backend ma bezstanowy token ważny 30 dni) |
+| rejestracja | `POST /api/register` → 201, backend zakłada sesję |
+| logowanie | `POST /api/login` |
+| bieżący użytkownik (po odświeżeniu) | `GET /api/me` |
+| wylogowanie | `POST /api/logout` (kasuje ciasteczko) |
+| lista zleceń | `GET /api/jobs?page=&limit=` → `{ jobs, pagination }`, sortowanie po terminie |
+| szczegóły | `GET /api/jobs/:id` |
+| nowe zlecenie | `POST /api/jobs` (status początkowy `new` ustawia backend) |
 
-Całą komunikację zawiera `src/services/api.js` (jedyny `fetch`), `auth.js` i `jobs.js`.
+Pełny opis: `../docs/API.md`. Całą komunikację zawiera `src/services/api.js` (jedyny `fetch`), `auth.js` i `jobs.js`.
 
-### Mapowanie modelu (granica aplikacji: `services/jobs.js → mapJob`)
+### Mapowanie modelu (granica aplikacji: `services/jobs.js`)
 
 | Frontend | Backend |
 |---|---|
-| `id`, `title`, `address`, `status`, `updatedAt` | bez zmian |
+| `id`, `title`, `description`, `address`, `status`, `createdAt`, `updatedAt` | bez zmian |
 | `clientName` | `customer` |
-| `dueDate` | `scheduledAt` |
-| `description`, `createdAt` | backend ich nie zwraca (puste / `null`) |
+| `dueDate` (pole `datetime-local`, wysyłane jako ISO) | `scheduledAt` |
 
-Statusy zgodne z backendem: `new`, `in_progress`, `done` (początkowy: `new`, nie `TODO`).
+Statusy zgodne z backendem: `new` („Do wykonania”), `in_progress`, `done`.
 
 ## Sesja i bezpieczeństwo
 
-Token Bearer jest trzymany tylko w pamięci (nie w `localStorage`), więc **odświeżenie strony wymaga ponownego logowania** – backend nie ma `/me` ani ciasteczek HttpOnly. Wygaśnięcie sesji (401) wylogowuje użytkownika. Autoryzacja i izolacja zleceń są egzekwowane przez backend.
+Sesja to ciasteczko `fieldops_session` (**HttpOnly**, `SameSite=Strict`) ustawiane przez backend – aplikacja nie zapisuje tokenu ani hasła w przeglądarce (`localStorage`/`sessionStorage`). Po odświeżeniu strony sesję odtwarza `GET /api/me`; wygaśnięcie sesji (401) przenosi na ekran logowania. Zmiany stanu wysyłane są z nagłówkiem `X-Requested-With` (ochrona CSRF). Autoryzacja i izolacja zleceń są egzekwowane przez backend, a nie przez ukrywanie przycisków.
 
-## Znane braki (backend nie udostępnia endpointów)
+Wymaganie: web i API muszą mieć wspólny origin (w developmencie zapewnia to proxy Vite, na produkcji reverse proxy). Za HTTPS ustaw na backendzie `COOKIE_SECURE=1`.
 
-Ekrany **Rejestracja** i **Nowe zlecenie** są w interfejsie, ale mają wyłączony przycisk i komunikat wyjaśniający – backend nie ma `register` ani `POST /api/jobs`. Flagi: `src/services/capabilities.js`.
+## Znane ograniczenia
+
+- Filtr statusu na liście działa na bieżącej stronie (filtrowanie po stronie serwera to zakres tygodnia 2).
+- Aplikacja mobilna nie jest częścią tej integracji: używa Bearer tokenów i `GET /api/jobs` bez paginacji (zgodność zachowana).

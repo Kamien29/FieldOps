@@ -1,12 +1,37 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { login as loginRequest, logout as logoutRequest } from '../services/auth.js'
+import {
+  getCurrentUser,
+  login as loginRequest,
+  logout as logoutRequest,
+  register as registerRequest,
+} from '../services/auth.js'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  // Backend nie ma /me ani ciasteczek sesyjnych, a token jest tylko w pamięci,
-  // więc po odświeżeniu strony użytkownik loguje się ponownie.
   const [user, setUser] = useState(null)
+  const [initializing, setInitializing] = useState(true)
+
+  // Po odświeżeniu strony sesję odtwarza ciasteczko HttpOnly (GET /api/me).
+  useEffect(() => {
+    let cancelled = false
+
+    async function restoreSession() {
+      try {
+        const currentUser = await getCurrentUser()
+        if (!cancelled) setUser(currentUser)
+      } catch {
+        if (!cancelled) setUser(null)
+      } finally {
+        if (!cancelled) setInitializing(false)
+      }
+    }
+
+    restoreSession()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     function expireSession() {
@@ -19,19 +44,27 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       user,
-      initializing: false,
+      initializing,
       isAuthenticated: Boolean(user),
       async login(credentials) {
         const nextUser = await loginRequest(credentials)
         setUser(nextUser)
         return nextUser
       },
-      logout() {
-        logoutRequest()
-        setUser(null)
+      async register(input) {
+        const nextUser = await registerRequest(input)
+        setUser(nextUser)
+        return nextUser
+      },
+      async logout() {
+        try {
+          await logoutRequest()
+        } finally {
+          setUser(null)
+        }
       },
     }),
-    [user],
+    [user, initializing],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

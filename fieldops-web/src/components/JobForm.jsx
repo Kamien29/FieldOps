@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { JOB_STATUSES } from '../services/jobs.js'
 import { validateJob } from '../validation.js'
 
 const INITIAL = {
@@ -8,10 +7,9 @@ const INITIAL = {
   clientName: '',
   address: '',
   dueDate: '',
-  status: 'new',
 }
 
-export default function JobForm({ onSubmit, submitting, disabled = false, submitLabel = 'Utwórz zlecenie' }) {
+export default function JobForm({ onSubmit, submitting, submitLabel = 'Utwórz zlecenie' }) {
   const [values, setValues] = useState(INITIAL)
   const [errors, setErrors] = useState({})
 
@@ -34,7 +32,6 @@ export default function JobForm({ onSubmit, submitting, disabled = false, submit
       clientName: values.clientName.trim(),
       address: values.address.trim(),
       dueDate: values.dueDate,
-      status: values.status,
     })
   }
 
@@ -111,22 +108,23 @@ export default function JobForm({ onSubmit, submitting, disabled = false, submit
 
       <div className="field">
         <label htmlFor="dueDate">Termin</label>
-        <input id="dueDate" name="dueDate" type="date" value={values.dueDate} onChange={updateField} aria-invalid={Boolean(errors.dueDate)} />
-        {errors.dueDate ? <p className="field-error" role="alert">{errors.dueDate}</p> : null}
+        <input
+          id="dueDate"
+          name="dueDate"
+          type="datetime-local"
+          value={values.dueDate}
+          onChange={updateField}
+          aria-invalid={Boolean(errors.dueDate)}
+          aria-describedby={errors.dueDate ? 'dueDate-error' : undefined}
+        />
+        {errors.dueDate ? (
+          <p id="dueDate-error" className="field-error" role="alert">
+            {errors.dueDate}
+          </p>
+        ) : null}
       </div>
 
-      <div className="field">
-        <label htmlFor="status">Status</label>
-        <select id="status" name="status" value={values.status} onChange={updateField}>
-          {JOB_STATUSES.map((status) => (
-            <option key={status.value} value={status.value}>
-              {status.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <button type="submit" disabled={submitting || disabled}>
+      <button type="submit" disabled={submitting}>
         {submitting ? 'Zapisywanie…' : submitLabel}
       </button>
     </form>

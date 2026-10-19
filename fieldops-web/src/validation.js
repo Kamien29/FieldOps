@@ -50,9 +50,6 @@ export function validateJob(values) {
   if (!values.dueDate) {
     errors.dueDate = 'Podaj termin zlecenia.'
   }
-  if (!values.status) {
-    errors.status = 'Wybierz status.'
-  }
 
   return errors
 }

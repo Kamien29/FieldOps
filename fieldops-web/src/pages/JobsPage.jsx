@@ -8,6 +8,8 @@ export default function JobsPage() {
   const [filter, setFilter] = useState('ALL')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageData, setPageData] = useState({ total: 0, totalPages: 1 })
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
@@ -17,9 +19,10 @@ export default function JobsPage() {
       setLoading(true)
       setError('')
       try {
-        const data = await getJobs()
+        const data = await getJobs(page)
         if (!cancelled) {
-          setJobs(data)
+          setJobs(data.items)
+          setPageData(data)
         }
       } catch (requestError) {
         if (!cancelled) {
@@ -36,7 +39,7 @@ export default function JobsPage() {
     return () => {
       cancelled = true
     }
-  }, [reload])
+  }, [page, reload])
 
   const visibleJobs = useMemo(() => {
     if (filter === 'ALL') return jobs
@@ -48,7 +51,7 @@ export default function JobsPage() {
       <div className="panel-header">
         <div>
           <h2>Lista zleceń</h2>
-          <p className="muted">Zlecenia: {jobs.length}</p>
+          <p className="muted">Zlecenia: {pageData.total}</p>
         </div>
         <div className="panel-actions">
           <label className="filter">
@@ -67,7 +70,7 @@ export default function JobsPage() {
             </select>
           </label>
           <Link className="button-link" to="/jobs/new">
-            Nowe zlecenie
+            Dodaj zlecenie
           </Link>
         </div>
       </div>
@@ -85,6 +88,23 @@ export default function JobsPage() {
       {!loading && !error
         ? visibleJobs.map((job) => <JobCard key={job.id} job={job} />)
         : null}
+      {!loading && !error && pageData.totalPages > 1 ? (
+        <nav className="pagination" aria-label="Paginacja zleceń">
+          <button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
+            Poprzednia
+          </button>
+          <span aria-live="polite">
+            Strona {page} z {pageData.totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= pageData.totalPages}
+            onClick={() => setPage((value) => value + 1)}
+          >
+            Następna
+          </button>
+        </nav>
+      ) : null}
     </section>
   )
 }

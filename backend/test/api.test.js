@@ -121,3 +121,131 @@ test('invalid JSON and unknown route', async () => {
   assert.equal(res.status, 400);
   assert.equal((await call('GET', '/api/nothing')).status, 404);
 });
+
+// ---------------- Tydzień 1: rejestracja, sesja, zlecenia ----------------
+
+const raw = (method, path, { body, headers = {} } = {}) =>
+  fetch(base + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+const NEW_USER = { name: 'Ewa Test', email: 'Ewa.Test@Example.com', password: 'tajnehaslo1' };
+const JOB_BODY = {
+  title: 'Wymiana filtra', description: 'Filtr w centrali wentylacyjnej', customer: 'Klient Zeta',
+  address: 'ul. Testowa 1, Rzeszów', scheduledAt: '2026-12-01T09:30:00.000Z',
+};
+
+test('register validates input and rejects duplicate e-mail', async () => {
+  const bad = (b) => call('POST', '/api/register', { tok: null, body: b });
+  assert.equal((await bad({ ...NEW_USER, name: '  ' })).json.error, 'invalid_name');
+  assert.equal((await bad({ ...NEW_USER, email: 'nie-email' })).json.error, 'invalid_email');
+  assert.equal((await bad({ ...NEW_USER, password: 'krotkie' })).json.error, 'invalid_password');
+  assert.equal((await bad({ ...NEW_USER, password: 12345678 })).json.error, 'invalid_password');
+
+  const ok = await bad(NEW_USER);
+  assert.equal(ok.status, 201);
+  assert.equal(ok.json.user.email, 'ewa.test@example.com'); // znormalizowany
+  assert.ok(ok.json.token);
+  assert.equal(JSON.stringify(ok.json).includes('password'), false);
+
+  const dup = await bad({ ...NEW_USER, email: 'EWA.TEST@example.com' });
+  assert.equal(dup.status, 409);
+  assert.equal(dup.json.error, 'email_taken');
+});
+
+test('password is stored hashed, never in plain text', () => {
+  const row = db.prepare('SELECT password_hash FROM users WHERE email=?').get('ewa.test@example.com');
+  assert.ok(row.password_hash.includes(':'));
+  assert.equal(row.password_hash.includes(NEW_USER.password), false);
+});
+
+test('new user can log in and starts with an empty, isolated job list', async () => {
+  const l = await call('POST', '/api/login', { tok: null, body: { email: 'ewa.test@example.com', password: NEW_USER.password } });
+  assert.equal(l.status, 200);
+  const jobs = await call('GET', '/api/jobs', { tok: l.json.token });
+  assert.deepEqual(jobs.json.jobs, []);
+});
+
+test('session cookie: HttpOnly, works for /api/me, mutations need X-Requested-With, logout clears it', async () => {
+  const res = await raw('POST', '/api/login', { body: { email: 'jan@fieldops.local', password: DEMO_PASSWORD } });
+  const setCookie = res.headers.get('set-cookie');
+  assert.match(setCookie, /fieldops_session=/);
+  assert.match(setCookie, /HttpOnly/);
+  assert.match(setCookie, /SameSite=Strict/);
+  const cookie = setCookie.split(';')[0];
+
+  const me = await raw('GET', '/api/me', { headers: { Cookie: cookie } });
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).user.email, 'jan@fieldops.local');
+
+  const noHeader = await raw('POST', '/api/jobs', { body: JOB_BODY, headers: { Cookie: cookie } });
+  assert.equal(noHeader.status, 403);
+  assert.equal((await noHeader.json()).error, 'csrf_blocked');
+  const withHeader = await raw('POST', '/api/jobs', { body: JOB_BODY, headers: { Cookie: cookie, 'X-Requested-With': 'fieldops-web' } });
+  assert.equal(withHeader.status, 201);
+
+  const out = await raw('POST', '/api/logout');
+  assert.equal(out.status, 200);
+  assert.match(out.headers.get('set-cookie'), /Max-Age=0/);
+
+  assert.equal((await raw('GET', '/api/me')).status, 401);
+  assert.equal((await raw('GET', '/api/me', { headers: { Cookie: 'fieldops_session=garbage.1.x' } })).status, 401);
+});
+
+test('create job: required fields validated, status forced to new, owned by creator', async () => {
+  for (const field of ['title', 'description', 'customer', 'address', 'scheduledAt']) {
+    const r = await call('POST', '/api/jobs', { body: { ...JOB_BODY, [field]: '' } });
+    assert.equal(r.status, 400, field);
+    assert.equal(r.json.error, `invalid_${field}`);
+  }
+  assert.equal((await call('POST', '/api/jobs', { body: { ...JOB_BODY, scheduledAt: 'wczoraj' } })).json.error, 'invalid_scheduledAt');
+  assert.equal((await call('POST', '/api/jobs', { tok: null, body: JOB_BODY })).status, 401);
+
+  const r = await call('POST', '/api/jobs', { body: { ...JOB_BODY, status: 'done' } });
+  assert.equal(r.status, 201);
+  assert.equal(r.json.job.status, 'new');
+  assert.equal(r.json.job.version, 1);
+  assert.equal(r.json.job.customer, 'Klient Zeta');
+  assert.ok(r.json.job.createdAt);
+
+  const mine = await call('GET', `/api/jobs/${r.json.job.id}`);
+  assert.equal(mine.status, 200);
+  assert.equal(mine.json.job.description, JOB_BODY.description);
+  assert.equal((await call('GET', `/api/jobs/${r.json.job.id}`, { tok: token2 })).status, 404);
+});
+
+test('job details by id: other user and unknown id are 404', async () => {
+  assert.equal((await call('GET', '/api/jobs/J-2001')).status, 404);
+  assert.equal((await call('GET', '/api/jobs/J-NOPE')).status, 404);
+  assert.equal((await call('GET', '/api/jobs/J-1001', { tok: null })).status, 401);
+  assert.equal((await call('GET', '/api/jobs/J-1003')).json.job.status, 'in_progress');
+});
+
+test('pagination: totals, sort by date, bounds; no params keeps the mobile response shape', async () => {
+  const all = await call('GET', '/api/jobs');
+  assert.equal(all.json.pagination, undefined);
+  const total = all.json.jobs.length;
+  assert.ok(total >= 7);
+
+  const p1 = await call('GET', '/api/jobs?page=1&limit=3');
+  assert.equal(p1.status, 200);
+  assert.equal(p1.json.jobs.length, 3);
+  assert.deepEqual(p1.json.pagination, { page: 1, limit: 3, total, totalPages: Math.ceil(total / 3) });
+  const dates = p1.json.jobs.map((j) => j.scheduledAt);
+  assert.deepEqual(dates, [...dates].sort());
+
+  const ids = new Set();
+  for (let page = 1; page <= p1.json.pagination.totalPages; page++) {
+    (await call('GET', `/api/jobs?page=${page}&limit=3`)).json.jobs.forEach((j) => ids.add(j.id));
+  }
+  assert.equal(ids.size, total); // brak duplikatów i pominięć między stronami
+
+  const beyond = await call('GET', '/api/jobs?page=99&limit=3');
+  assert.deepEqual(beyond.json.jobs, []);
+  assert.equal(beyond.json.pagination.total, total);
+  assert.equal((await call('GET', '/api/jobs?page=0')).json.error, 'invalid_page');
+  assert.equal((await call('GET', '/api/jobs?limit=101')).json.error, 'invalid_limit');
+  assert.equal((await call('GET', '/api/jobs?limit=abc')).json.error, 'invalid_limit');
+});

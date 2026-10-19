@@ -5,9 +5,12 @@ export default function AppLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
 
-  function handleLogout() {
-    logout()
-    navigate('/login', { replace: true })
+  async function handleLogout() {
+    try {
+      await logout()
+    } finally {
+      navigate('/login', { replace: true })
+    }
   }
 
   const displayName = user?.name || user?.email || 'Użytkownik'
@@ -24,7 +27,7 @@ export default function AppLayout() {
           <NavLink to="/jobs" end>
             Zlecenia
           </NavLink>
-          <NavLink to="/jobs/new">Nowe zlecenie</NavLink>
+          <NavLink to="/jobs/new">Dodaj zlecenie</NavLink>
         </nav>
 
         <div className="session">

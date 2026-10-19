@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 const SECRET = process.env.TOKEN_SECRET || 'dev-secret-change-me';
 const TTL_MS = 30 * 24 * 3600 * 1000;
+export const TOKEN_TTL_SECONDS = TTL_MS / 1000;
 
 const mac = (payload) => crypto.createHmac('sha256', SECRET).update(payload).digest('hex');
 
