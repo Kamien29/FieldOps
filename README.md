@@ -1,33 +1,22 @@
-# FieldOps — zakres tygodnia 1–2 (wersja demonstracyjna)
+# FieldOps — PostgreSQL + Vercel Services
 
-Samodzielny, uruchamialny prototyp zakresu pierwszych dwóch tygodni:
-- rejestracja i logowanie serwisanta;
-- sesja Bearer token;
-- izolacja zleceń i urządzeń per użytkownik;
-- tworzenie, odczyt, edycja i usuwanie zleceń;
-- statusy: `to_do` → `in_progress` → `done`, anulowanie z dowolnego statusu;
-- filtrowanie po statusie, dacie i urządzeniu;
-- paginacja listy zleceń;
-- rejestr urządzeń, wyszukiwanie po nazwie/numerze, powiązanie urządzenia ze zleceniem;
-- identyfikacja przez wpisanie numeru seryjnego; kod QR jest reprezentowany przez ten sam identyfikator (skanowanie kamerą wymaga osobnej integracji).
+FieldOps includes a Vite/React web frontend (`fieldops-web`), a Node.js API (`backend`), and a mobile client (`mobile`).
 
-## Wymagania
-Node.js >= 22.13 (używa wbudowanego `node:sqlite`), bez dodatkowych paczek.
+Production persistence is provided by PostgreSQL rather than ephemeral SQLite. Accounts, jobs, devices, reports, photos, and synchronization idempotency are stored in PostgreSQL. No demo accounts are seeded by default.
 
-## Uruchomienie
-```bash
-npm start
-```
-Otwórz http://localhost:3000
+## Getting started
 
-Dane demonstracyjne:
-- użytkownik: `demo@fieldops.local`
-- hasło: `Demo123!`
+From `backend/` install npm dependencies, set environment variables from `.env.example`, run `npm run migrate`, then `npm start`. For the web app use `cd fieldops-web && npm ci && npm run dev`.
 
-Możesz też założyć nowe konto przez ekran rejestracji.
+Important: `npm run migrate` and `npm start` expect `DATABASE_URL` and `TOKEN_SECRET` to be exported by the shell, supplied by your process manager, or loaded with `node --env-file=.env`.
 
-## API
-Szczegóły w `docs/API.md`. Test zdrowia: `GET /health`.
+### Production checklist
 
-## Ważne ograniczenia
-To samodzielny prototyp do demonstracji, nie automatyczna poprawka repozytorium GitHub. Nie zawiera jeszcze raportów, uploadu zdjęć/podpisów, natywnej aplikacji mobilnej ani synchronizacji offline. Przed produkcją należy dodać testy bezpieczeństwa, ograniczenia prób logowania, rotację/wygaśnięcie sesji i pełny proces wdrożenia. SQLite zapisuje dane w `data/fieldops.sqlite`; na hostingu potrzebny jest trwały dysk.
+- Create a PostgreSQL database (e.g. Neon) and enable backups.
+- Set `DATABASE_URL`, strong `TOKEN_SECRET` (at least 32 characters), `COOKIE_SECURE=1` for the backend.
+- Run migrations on the target database **before** enabling production traffic.
+- Use the `Services` project framework on Vercel and keep the `vercel.json` routing.
+- Test full web/mobile API flows, permissions, and synchronization on a staging database.
+- Add rate limiting, monitoring, backup restores, session revocation, and object storage for large-scale photos before serious production usage.
+
+For detailed instructions and migration from SQLite, see the `README-START.md` included with the fix bundle.

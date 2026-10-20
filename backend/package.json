@@ -1,13 +1,14 @@
 {
   "name": "fieldops-backend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "FieldOps sync backend (zero dependencies, Node >= 22.13)",
-  "engines": { "node": ">=22.13" },
+  "engines": { "node": ">=22" },
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test test/*.test.js",
-    "simulate-change": "node src/simulate-dispatcher.js"
-  }
+    "migrate": "node src/migrate.js",
+    "import:sqlite": "node src/import-sqlite.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": { "pg": "^8.16.3" }
 }
