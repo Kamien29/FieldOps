@@ -5,7 +5,7 @@ import { TOKEN_TTL_SECONDS, hashPassword, signToken, verifyPassword, verifyToken
 
 const MAX_BODY = 15 * 1024 * 1024;
 const MAX_PHOTO = 10 * 1024 * 1024;
-const STATUSES = ['new', 'in_progress', 'done'];
+const STATUSES = ['new', 'in_progress', 'done', 'cancelled'];
 const MIMES = ['image/jpeg', 'image/png', 'image/webp'];
 const ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -71,6 +71,7 @@ async function jobJson(row, db) {
   return {
     id: row.id, title: row.title, description: row.description ?? '', customer: row.customer,
     address: row.address, scheduledAt: row.scheduled_at, status: row.status, version: row.version,
+    deviceId: row.device_id ?? null,
     createdAt: row.created_at || null, updatedAt: row.updated_at,
     report: report ? {
       note: report.note, lat: report.lat, lng: report.lng, deviceCode: report.device_code,
@@ -158,6 +159,63 @@ async function route(req, res) {
     const user = await one('SELECT id,name,email FROM users WHERE id=$1', [userId]);
     return send(res, 200, { user });
   }
+
+  // Device registry: all reads and writes are scoped to the authenticated user.
+  if (m === 'GET' && p === '/api/devices') {
+    const devices = await all('SELECT id,serial,name,model,location,created_at,updated_at FROM devices WHERE user_id=$1 ORDER BY LOWER(name), id', [userId]);
+    return send(res, 200, { devices });
+  }
+  if (m === 'GET' && p === '/api/devices/identify') {
+    const serial = (parsed.searchParams.get('serial') || '').trim();
+    if (!serial || serial.length > 200) throw error(400, 'invalid_serial');
+    const device = await one('SELECT id,serial,name,model,location FROM devices WHERE user_id=$1 AND LOWER(serial)=LOWER($2)', [userId, serial]);
+    if (!device) throw error(404, 'device_not_found');
+    return send(res, 200, { device });
+  }
+  if (m === 'POST' && p === '/api/devices') {
+    const b = await readJson(req);
+    const serial = required(b.serial, 200, 'serial');
+    const name = required(b.name, 200, 'name');
+    const model = optionalText(b.model, 200, 'model') ?? '';
+    const location = optionalText(b.location, 300, 'location') ?? '';
+    const id = `d-${randomUUID()}`, t = now();
+    try {
+      await query('INSERT INTO devices(id,user_id,serial,name,model,location,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)', [id,userId,serial,name,model,location,t,t]);
+    } catch (e) {
+      if (e.code === '23505') throw error(409, 'serial_taken');
+      throw e;
+    }
+    return send(res, 201, { device: await one('SELECT id,serial,name,model,location FROM devices WHERE id=$1', [id]) });
+  }
+  let deviceMatch;
+  if (m === 'PATCH' && (deviceMatch = p.match(/^\/api\/devices\/([^/]+)$/))) {
+    const b = await readJson(req);
+    const result = await transaction(async (client) => {
+      const old = await one('SELECT * FROM devices WHERE id=$1 AND user_id=$2 FOR UPDATE', [deviceMatch[1],userId], client);
+      if (!old) throw error(404, 'device_not_found');
+      const serial = b.serial === undefined ? old.serial : required(b.serial, 200, 'serial');
+      const name = b.name === undefined ? old.name : required(b.name, 200, 'name');
+      const model = b.model === undefined ? old.model : optionalText(b.model, 200, 'model') ?? '';
+      const location = b.location === undefined ? old.location : optionalText(b.location, 300, 'location') ?? '';
+      try {
+        await query('UPDATE devices SET serial=$1,name=$2,model=$3,location=$4,updated_at=$5 WHERE id=$6 AND user_id=$7', [serial,name,model,location,now(),old.id,userId], client);
+      } catch (e) {
+        if (e.code === '23505') throw error(409, 'serial_taken');
+        throw e;
+      }
+      return one('SELECT id,serial,name,model,location FROM devices WHERE id=$1', [old.id], client);
+    });
+    return send(res, 200, { device: result });
+  }
+  if (m === 'DELETE' && (deviceMatch = p.match(/^\/api\/devices\/([^/]+)$/))) {
+    await transaction(async (client) => {
+      const d = await one('SELECT id FROM devices WHERE id=$1 AND user_id=$2 FOR UPDATE', [deviceMatch[1],userId], client);
+      if (!d) throw error(404, 'device_not_found');
+      await query('UPDATE jobs SET device_id=NULL,version=version+1,updated_at=$1 WHERE assigned_to=$2 AND device_id=$3', [now(),userId,d.id], client);
+      await query('DELETE FROM devices WHERE id=$1 AND user_id=$2', [d.id,userId], client);
+    });
+    return send(res, 200, { ok: true });
+  }
   if (m === 'GET' && p === '/api/jobs') {
     const serverTime = now();
     const since = parsed.searchParams.get('since') || '';
@@ -179,19 +237,58 @@ async function route(req, res) {
   if (m === 'POST' && p === '/api/jobs') {
     const body = await readJson(req);
     const title = required(body.title, 200, 'title');
-    const description = required(body.description, 5000, 'description');
+    const description = optionalText(body.description, 5000, 'description') ?? '';
     const customer = required(body.customer, 200, 'customer');
     const address = required(body.address, 300, 'address');
     const date = typeof body.scheduledAt === 'string' ? new Date(body.scheduledAt) : null;
     if (!date || !Number.isFinite(date.getTime()) || date.getUTCFullYear() < 2000 || date.getUTCFullYear() > 2100) throw error(400, 'invalid_scheduledAt');
+    const deviceId = body.deviceId ?? null;
+    if (deviceId !== null && (typeof deviceId !== 'string' ||
+        !await one('SELECT 1 FROM devices WHERE id=$1 AND user_id=$2', [deviceId, userId]))) {
+      throw error(400, 'invalid_device');
+    }
     const id = `J-${randomBytes(6).toString('hex').toUpperCase()}`; const t = now();
-    await query(`INSERT INTO jobs(id,assigned_to,title,customer,address,scheduled_at,description,status,created_at,updated_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [id,userId,title,customer,address,date.toISOString(),description,'new',t,t]);
+    await query(`INSERT INTO jobs(id,assigned_to,title,customer,address,scheduled_at,description,status,created_at,updated_at,device_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [id,userId,title,customer,address,date.toISOString(),description,'new',t,t,deviceId]);
     return send(res, 201, { job: await jobJson(await one('SELECT * FROM jobs WHERE id=$1', [id])) });
   }
   let mt;
   if (m === 'GET' && (mt = p.match(/^\/api\/jobs\/([^/]+)$/))) {
     return send(res, 200, { job: await jobJson(await ownedJob(mt[1], userId)) });
+  }
+
+  if (m === 'PATCH' && (mt = p.match(/^\/api\/jobs\/([^/]+)$/))) {
+    const b = await readJson(req);
+    const result = await idempotent(req, userId, async (client) => {
+      const old = await ownedJob(mt[1], userId, client, true);
+      await checkVersion(old, b, client);
+      const title = b.title === undefined ? old.title : required(b.title, 200, 'title');
+      const description = b.description === undefined ? old.description : optionalText(b.description, 5000, 'description') ?? '';
+      const customer = b.customer === undefined ? old.customer : required(b.customer, 200, 'customer');
+      const address = b.address === undefined ? old.address : required(b.address, 300, 'address');
+      const dt = b.scheduledAt === undefined ? new Date(old.scheduled_at) : new Date(b.scheduledAt);
+      if (!Number.isFinite(dt.getTime()) || dt.getUTCFullYear() < 2000 || dt.getUTCFullYear() > 2100) throw error(400,'invalid_scheduledAt');
+      const deviceId = b.deviceId === undefined ? old.device_id : b.deviceId;
+      if (deviceId !== null && (typeof deviceId !== 'string' ||
+          !await one('SELECT 1 FROM devices WHERE id=$1 AND user_id=$2', [deviceId,userId], client))) {
+        throw error(400, 'invalid_device');
+      }
+      await query(`UPDATE jobs SET title=$1,description=$2,customer=$3,address=$4,scheduled_at=$5,
+        device_id=$6,version=version+1,updated_at=$7 WHERE id=$8 AND assigned_to=$9`,
+        [title,description,customer,address,dt.toISOString(),deviceId,now(),old.id,userId], client);
+      return { status: 200, body: { job: await jobJson(await ownedJob(old.id,userId,client), client) } };
+    });
+    return send(res,result.status,result.body);
+  }
+  if (m === 'DELETE' && (mt = p.match(/^\/api\/jobs\/([^/]+)$/))) {
+    const result = await idempotent(req, userId, async (client) => {
+      const old = await ownedJob(mt[1], userId, client, true);
+      await query('DELETE FROM photos WHERE job_id=$1', [old.id],client);
+      await query('DELETE FROM reports WHERE job_id=$1', [old.id],client);
+      await query('DELETE FROM jobs WHERE id=$1 AND assigned_to=$2', [old.id,userId],client);
+      return { status: 200, body: { ok: true } };
+    });
+    return send(res,result.status,result.body);
   }
   if (m === 'POST' && (mt = p.match(/^\/api\/jobs\/([^/]+)\/status$/))) {
     const body = await readJson(req);

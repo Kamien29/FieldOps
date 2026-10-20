@@ -1,13 +1,398 @@
 <!doctype html>
 <html lang="pl">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FieldOps</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FieldOps — panel serwisanta</title>
+<style>
+:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:#15202b;background:#f4f7fb;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer;border:0;border-radius:10px;padding:10px 14px;background:#155eef;color:white;font-weight:650}button.secondary{background:#e9eef7;color:#26374b}button.danger{background:#b42318}button:disabled{opacity:.5;cursor:not-allowed}
+header{height:70px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;padding:0 max(20px,calc((100% - 1200px)/2));position:sticky;top:0;z-index:2}
+.brand{font-weight:850;font-size:22px;letter-spacing:-.8px}.brand span{color:#155eef}.user{display:flex;gap:12px;align-items:center;color:#536273;font-size:14px}
+main{max-width:1200px;margin:28px auto;padding:0 20px}.eyebrow{color:#155eef;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:1.3px}
+h1{font-size:30px;letter-spacing:-1px;margin:8px 0}p.sub{color:#687789;margin:6px 0 24px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
+.stat,.panel,.auth-card{background:white;border:1px solid #e4eaf2;border-radius:16px;padding:18px;box-shadow:0 3px 12px #172b4d06}.stat small{color:#687789}.stat strong{display:block;font-size:28px;margin-top:8px}
+.tabs{display:flex;gap:8px;margin:20px 0}.tabs button{background:transparent;color:#66758a}.tabs button.active{background:#e4edff;color:#155eef}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}.toolbar input,.toolbar select{max-width:220px}
+input,select,textarea{border:1px solid #d4dce7;border-radius:9px;padding:10px 11px;background:white;color:#182230;width:100%}label{font-size:12px;color:#64748b;font-weight:700;display:grid;gap:6px}
+.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.panel h2{font-size:17px;margin:0 0 14px}
+.job{border:1px solid #e5eaf1;border-radius:12px;padding:14px;margin:10px 0;display:grid;grid-template-columns:1fr auto;gap:10px}.job h3{font-size:15px;margin:0 0 5px}.muted{font-size:13px;color:#687789;line-height:1.5}.job-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center}.job-actions button{font-size:12px;padding:8px 10px}
+.badge{display:inline-flex;border-radius:99px;padding:4px 9px;font-size:11px;font-weight:800;background:#edf2f8;color:#536273}.badge.to_do{background:#fff1d6;color:#925b00}.badge.in_progress{background:#e5efff;color:#155eef}.badge.done{background:#dff7e8;color:#167647}.badge.cancelled{background:#fee4e2;color:#b42318}
+form.fields{display:grid;gap:12px}.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}.empty{padding:28px;text-align:center;color:#758397}.device{padding:12px;border:1px solid #e5eaf1;border-radius:10px;margin:8px 0;display:flex;justify-content:space-between;gap:10px}.device b{display:block}.message{padding:11px 13px;border-radius:9px;margin:10px 0;background:#ecfdf3;color:#067647}.message.error{background:#fef3f2;color:#b42318}.hidden{display:none!important}
+.auth-wrap{min-height:calc(100vh - 70px);display:grid;place-items:center;padding:24px}.auth-card{width:min(430px,100%);padding:28px}.auth-card h1{font-size:26px}.auth-card form{display:grid;gap:14px}.auth-switch{text-align:center;margin-top:16px;color:#64748b;font-size:14px}.link{color:#155eef;background:none;padding:0}
+footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
+@media(max-width:800px){.stats{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.job{grid-template-columns:1fr}.job-actions{justify-content:flex-start}.user span{display:none}main{margin-top:20px}.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><div class="brand">Field<span>Ops</span></div><div class="user"><span id="userName">Tryb demonstracyjny</span><button id="logout" class="secondary hidden">Wyloguj</button></div></header>
+<div id="auth" class="auth-wrap"><section class="auth-card"><div class="eyebrow">Mobilny pomocnik serwisanta</div><h1 id="authTitle">Zaloguj się</h1><p class="sub">Zarządzaj zleceniami i urządzeniami w jednym miejscu.</p><div id="authMessage"></div><form id="authForm"><label id="nameWrap" class="hidden">Imię / nazwa użytkownika<input name="name" minlength="2"></label><label>E-mail<input name="email" type="email" required autocomplete="email" placeholder="serwisant@firma.pl"></label><label>Hasło<input name="password" type="password" required minlength="8" autocomplete="current-password" placeholder="Minimum 8 znaków"></label><button id="authSubmit">Zaloguj</button></form><div class="auth-switch"><span id="authPrompt">Nie masz konta?</span> <button class="link" id="switchAuth">Utwórz konto</button></div><p class="muted">Konta i zlecenia zapisywane są w bezpiecznej bazie danych PostgreSQL.</p></section></div>
+<main id="app" class="hidden">
+<div class="eyebrow">Panel serwisanta</div><h1>Twoje zlecenia</h1><p class="sub">Planuj pracę, pilnuj terminów i prowadź rejestr obsługiwanych urządzeń.</p>
+<div class="stats"><div class="stat"><small>Wszystkie zlecenia</small><strong id="sAll">0</strong></div><div class="stat"><small>Do wykonania</small><strong id="sTodo">0</strong></div><div class="stat"><small>W realizacji</small><strong id="sProgress">0</strong></div><div class="stat"><small>Wykonane</small><strong id="sDone">0</strong></div></div>
+<div class="tabs"><button class="active" data-tab="jobs">Zlecenia</button><button data-tab="devices">Urządzenia</button><button data-tab="identify">Identyfikacja</button></div>
+<div id="notice"></div>
+<section id="jobsTab">
+<div class="toolbar"><input id="search" placeholder="Szukaj tytułu, klienta…"><select id="filterStatus"><option value="">Wszystkie statusy</option><option value="new">Do wykonania</option><option value="in_progress">W realizacji</option><option value="done">Wykonane</option><option value="cancelled">Anulowane</option></select><label style="width:auto">Od<input id="dateFrom" type="date"></label><label style="width:auto">Do<input id="dateTo" type="date"></label><button id="clearFilters" class="secondary">Wyczyść</button><button id="newJob">+ Dodaj zlecenie</button></div>
+<div class="grid"><section class="panel"><h2>Lista zleceń <span class="muted" id="resultCount"></span></h2><div id="jobsList"></div><div class="toolbar"><button id="prevPage" class="secondary">← Poprzednia</button><span id="pageInfo" class="muted"></span><button id="nextPage" class="secondary">Następna →</button></div></section>
+<section class="panel"><h2 id="jobFormTitle">Nowe zlecenie</h2><form class="fields" id="jobForm"><input type="hidden" name="id"><label>Tytuł zlecenia<input name="title" required maxlength="120" placeholder="Np. przegląd urządzenia"></label><label>Opis<textarea name="description" rows="3" placeholder="Zakres prac…"></textarea></label><div class="two"><label>Klient<input name="client_name" required></label><label>Termin<input name="due_date" type="date" required></label></div><label>Adres<input name="address" required></label><label>Powiązane urządzenie<select name="device_id" id="jobDevice"><option value="">Bez przypisanego urządzenia</option></select></label><div class="toolbar"><button type="submit">Zapisz zlecenie</button><button type="button" id="cancelEdit" class="secondary">Wyczyść formularz</button></div></form></section></div>
+</section>
+<section id="devicesTab" class="hidden"><div class="grid"><section class="panel"><h2>Rejestr urządzeń</h2><div class="toolbar"><input id="deviceSearch" placeholder="Szukaj nazwy lub numeru…"></div><div id="devicesList"></div></section><section class="panel"><h2 id="deviceFormTitle">Dodaj urządzenie</h2><form class="fields" id="deviceForm"><input type="hidden" name="id"><label>Numer identyfikacyjny / seryjny<input name="serial" required placeholder="np. AC-001"></label><label>Nazwa urządzenia<input name="name" required placeholder="np. Klimatyzator"></label><div class="two"><label>Model<input name="model"></label><label>Lokalizacja<input name="location"></label></div><div class="toolbar"><button type="submit">Zapisz urządzenie</button><button type="button" id="cancelDevice" class="secondary">Wyczyść</button></div></form></section></div></section>
+<section id="identifyTab" class="hidden"><div class="grid"><section class="panel"><h2>Identyfikacja urządzenia</h2><p class="muted">Wpisz numer z tabliczki lub kodu QR. W tym prototypie ręczne wpisanie numeru jest dostępne; skanowanie aparatem można dodać jako osobną integrację.</p><form id="identifyForm" class="fields"><label>Numer identyfikacyjny<input name="serial" required placeholder="np. FO-AC-001"></label><button>Znajdź urządzenie</button></form><div id="identifyResult"></div></section><section class="panel"><h2>Jak to działa?</h2><p class="muted">Numer identyfikacyjny jest unikalny w obrębie konta. Zlecenie może wskazywać urządzenie z rejestru lub działać bez powiązania. Nie znaleziono urządzenia? Dodaj je w zakładce „Urządzenia”.</p></section></div></section>
+</main><footer>FieldOps · demonstrator zakresu tygodnia 1–2 · dane odseparowane per konto</footer>
+<script>
+'use strict';
+// FieldOps panel (legacy appearance) backed by the PostgreSQL API.
+// Authentication uses the secure, HttpOnly session cookie: no tokens in localStorage.
+const $ = (selector) => document.querySelector(selector);
+const esc = (value = '') => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const statusLabels = {new:'Do wykonania', in_progress:'W realizacji', done:'Wykonane', cancelled:'Anulowane'};
+const apiErrors = {
+  unauthorized:'Zaloguj się ponownie.', invalid_credentials:'Nieprawidłowy e-mail lub hasło.',
+  invalid_credentials_format:'Podaj e-mail i hasło.', email_taken:'Konto z tym adresem już istnieje.',
+  invalid_name:'Podaj imię lub nazwę.', invalid_email:'Niepoprawny adres e-mail.',
+  invalid_password:'Hasło musi zawierać od 8 do 200 znaków.',
+  invalid_title:'Wpisz tytuł zlecenia.', invalid_customer:'Podaj nazwę klienta.',
+  invalid_address:'Podaj adres.', invalid_scheduledAt:'Podaj poprawny termin.',
+  invalid_device:'Wybrane urządzenie nie istnieje.', invalid_serial:'Podaj numer seryjny.',
+  serial_taken:'Numer seryjny jest już przypisany do urządzenia.',
+  device_not_found:'Nie znaleziono urządzenia.', job_not_found:'Nie znaleziono zlecenia.',
+  csrf_blocked:'Odśwież stronę i spróbuj ponownie.',
+  conflict:'Zlecenie zostało zmienione na innym urządzeniu. Odśwież listę i spróbuj ponownie.',
+  internal_error:'Błąd serwera. Sprawdź konfigurację backendu w Vercel.'
+};
+let user = null;
+let jobs = [];
+let devices = [];
+let registerMode = false;
+let page = 1;
+const pageSize = 8;
+
+async function api(path, options = {}) {
+  const { body, headers, ...rest } = options;
+  const requestHeaders = {
+    'X-Requested-With':'fieldops-web',
+    ...(body !== undefined ? {'Content-Type':'application/json'} : {}),
+    ...(rest.method && !['GET', 'HEAD'].includes(rest.method.toUpperCase()) ? {'Idempotency-Key':crypto.randomUUID()} : {}),
+    ...headers
+  };
+  let response;
+  try {
+    response = await fetch(path, {
+      credentials:'same-origin',
+      ...rest,
+      headers:requestHeaders,
+      ...(body !== undefined ? {body:JSON.stringify(body)} : {})
+    });
+  } catch (_) {
+    throw Object.assign(new Error('Nie można połączyć się z serwerem. Sprawdź backend.'),{status:0});
+  }
+  let payload;
+  try { payload = await response.json(); } catch { payload = null; }
+  if (!response.ok) {
+    const code = payload?.error;
+    const message = typeof code === 'string' ? (apiErrors[code] || code) : `Błąd żądania (${response.status}).`;
+    throw Object.assign(new Error(message), {status:response.status, code, payload});
+  }
+  return payload;
+}
+function showNotice(message, isError = false) {
+  $('#notice').innerHTML = message ? `<div class="message ${isError ? 'error' : ''}">${esc(message)}</div>` : '';
+}
+function showAuth(message = '') {
+  user = null;
+  $('#auth').classList.remove('hidden');
+  $('#app').classList.add('hidden');
+  $('#logout').classList.add('hidden');
+  $('#userName').textContent = '';
+  $('#authMessage').innerHTML = message ? `<div class="message error">${esc(message)}</div>` : '';
+}
+function showApp() {
+  $('#auth').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  $('#logout').classList.remove('hidden');
+  $('#userName').textContent = user?.name || user?.email || '';
+}
+function setAuthMode() {
+  $('#authTitle').textContent = registerMode ? 'Utwórz konto' : 'Zaloguj się';
+  $('#authSubmit').textContent = registerMode ? 'Zarejestruj' : 'Zaloguj';
+  $('#nameWrap').classList.toggle('hidden', !registerMode);
+  $('#authPrompt').textContent = registerMode ? 'Masz już konto?' : 'Nie masz konta?';
+  $('#switchAuth').textContent = registerMode ? 'Zaloguj się' : 'Utwórz konto';
+  $('#authForm [name=password]').autocomplete = registerMode ? 'new-password' : 'current-password';
+}
+$('#switchAuth').addEventListener('click', () => {
+  registerMode = !registerMode;
+  setAuthMode();
+  $('#authMessage').innerHTML = '';
+});
+$('#authForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(event.currentTarget));
+  $('#authSubmit').disabled = true;
+  try {
+    const reply = await api(registerMode ? '/api/register' : '/api/login', {method:'POST',body:values});
+    user = reply.user;
+    await initApp();
+  } catch (err) {
+    showAuth(err.message);
+  } finally {
+    $('#authSubmit').disabled = false;
+  }
+});
+$('#logout').addEventListener('click', async () => {
+  try { await api('/api/logout', {method:'POST'}); } catch (err) { showNotice(err.message,true); }
+  showAuth();
+});
+async function initApp() {
+  showApp();
+  try {
+    await Promise.all([loadDevices(), loadJobs()]);
+  } catch (err) {
+    if (err.status === 401) return showAuth('Sesja wygasła. Zaloguj się ponownie.');
+    showNotice(err.message, true);
+  }
+}
+
+const dateOnly = value => value ? String(value).slice(0,10) : '';
+const formatDate = value => dateOnly(value) || '—';
+const statusClass = status => status === 'new' ? 'to_do' : status;
+const deviceById = id => devices.find(device => device.id === id);
+const filteredJobs = () => {
+  const search = $('#search').value.trim().toLocaleLowerCase('pl');
+  const status = $('#filterStatus').value;
+  const from = $('#dateFrom').value;
+  const to = $('#dateTo').value;
+  return jobs.filter(j => {
+    const text = `${j.title} ${j.customer} ${j.address}`.toLocaleLowerCase('pl');
+    const date = dateOnly(j.scheduledAt);
+    return (!search || text.includes(search)) && (!status || status === j.status) &&
+      (!from || date >= from) && (!to || date <= to);
+  });
+};
+function renderStats() {
+  $('#sAll').textContent = String(jobs.length);
+  $('#sTodo').textContent = String(jobs.filter(j => j.status === 'new').length);
+  $('#sProgress').textContent = String(jobs.filter(j => j.status === 'in_progress').length);
+  $('#sDone').textContent = String(jobs.filter(j => j.status === 'done').length);
+}
+function renderJobs() {
+  const filtered = filteredJobs();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  page = Math.min(Math.max(1,page), totalPages);
+  const current = filtered.slice((page-1)*pageSize,page*pageSize);
+  $('#resultCount').textContent = `(${filtered.length})`;
+  $('#pageInfo').textContent = `Strona ${page} / ${totalPages}`;
+  $('#prevPage').disabled = page <= 1;
+  $('#nextPage').disabled = page >= totalPages;
+  $('#jobsList').innerHTML = current.length ? current.map(j => {
+    const d = deviceById(j.deviceId);
+    const statusAction = j.status === 'new'
+      ? `<button data-job-action="status" data-id="${esc(j.id)}" data-status="in_progress">Rozpocznij</button>`
+      : (j.status === 'in_progress' ? `<button data-job-action="status" data-id="${esc(j.id)}" data-status="done">Zakończ</button>` : '');
+    return `<article class="job"><div><h3>${esc(j.title)}</h3>
+      <div class="muted">${esc(j.customer)} · ${esc(j.address)}<br>Termin: <b>${esc(formatDate(j.scheduledAt))}</b>
+      ${d ? `<br>Urządzenie: ${esc(d.name)} (${esc(d.serial)})` : ''}
+      <br>${esc(j.description || 'Brak opisu')}</div>
+      <p><span class="badge ${esc(statusClass(j.status))}">${esc(statusLabels[j.status] || j.status)}</span></p></div>
+      <div class="job-actions">
+        <button class="secondary" data-job-action="edit" data-id="${esc(j.id)}">Edytuj</button>
+        ${statusAction}
+        ${j.status !== 'cancelled' ? `<button class="secondary" data-job-action="status" data-id="${esc(j.id)}" data-status="cancelled">Anuluj</button>` : ''}
+        <button class="danger" data-job-action="delete" data-id="${esc(j.id)}">Usuń</button>
+      </div></article>`;
+  }).join('') : '<div class="empty">Brak zleceń dla wybranych filtrów.</div>';
+  renderStats();
+}
+async function loadJobs() {
+  const reply = await api('/api/jobs');
+  jobs = Array.isArray(reply.jobs) ? reply.jobs : [];
+  renderJobs();
+}
+function resetJob() {
+  $('#jobForm').reset();
+  $('#jobForm').elements.id.value = '';
+  $('#jobFormTitle').textContent = 'Nowe zlecenie';
+}
+async function editJob(id) {
+  const reply = await api('/api/jobs/' + encodeURIComponent(id));
+  const j = reply.job;
+  const f = $('#jobForm');
+  const props = {
+    id:j.id, title:j.title, description:j.description, client_name:j.customer,
+    address:j.address, due_date:dateOnly(j.scheduledAt), device_id:j.deviceId || ''
+  };
+  for (const [field, value] of Object.entries(props)) if (f.elements[field]) f.elements[field].value = value ?? '';
+  $('#jobFormTitle').textContent = 'Edytuj zlecenie';
+  f.scrollIntoView({behavior:'smooth',block:'center'});
+  showNotice('Edytujesz zlecenie. Zmień pola i kliknij „Zapisz zlecenie”.');
+}
+async function updateStatus(id, status) {
+  const j = jobs.find(job => job.id === id);
+  if (!j) throw new Error('Nie znaleziono zlecenia. Odśwież listę.');
+  await api('/api/jobs/' + encodeURIComponent(id) + '/status', {
+    method:'POST',body:{status,baseVersion:j.version}
+  });
+  await loadJobs();
+  showNotice('Status zlecenia został zmieniony.');
+}
+async function deleteJob(id) {
+  if (!confirm('Czy na pewno chcesz usunąć zlecenie? Ta operacja jest nieodwracalna.')) return;
+  await api('/api/jobs/' + encodeURIComponent(id),{method:'DELETE'});
+  await loadJobs();
+  showNotice('Zlecenie zostało usunięte.');
+}
+$('#jobsList').addEventListener('click', async event => {
+  const button = event.target.closest('[data-job-action]');
+  if (!button) return;
+  button.disabled = true;
+  try {
+    if (button.dataset.jobAction === 'edit') await editJob(button.dataset.id);
+    if (button.dataset.jobAction === 'status') await updateStatus(button.dataset.id,button.dataset.status);
+    if (button.dataset.jobAction === 'delete') await deleteJob(button.dataset.id);
+  } catch (err) {
+    showNotice(err.message,true);
+    if (err.code === 'conflict') await loadJobs();
+  } finally { button.disabled = false; }
+});
+$('#jobForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const f = event.currentTarget;
+  const values = Object.fromEntries(new FormData(f));
+  const id = values.id;
+  const selectedJob = jobs.find(j => j.id === id);
+  const body = {
+    title:values.title,
+    description:values.description || '',
+    customer:values.client_name,
+    address:values.address,
+    scheduledAt:values.due_date + 'T12:00:00.000Z',
+    deviceId:values.device_id || null
+  };
+  const submitButton = f.querySelector('button[type=submit]');
+  submitButton.disabled = true;
+  try {
+    if (id) {
+      if (!selectedJob) throw new Error('Odśwież listę zleceń przed zapisem.');
+      await api('/api/jobs/' + encodeURIComponent(id),{method:'PATCH',body:{...body,baseVersion:selectedJob.version}});
+    } else {
+      await api('/api/jobs',{method:'POST',body});
+    }
+    resetJob();
+    page = 1;
+    await loadJobs();
+    showNotice(id ? 'Zlecenie zostało zaktualizowane.' : 'Dodano nowe zlecenie.');
+  } catch (err) {
+    showNotice(err.message,true);
+    if (err.code === 'conflict') await loadJobs();
+  } finally {submitButton.disabled = false;}
+});
+$('#cancelEdit').addEventListener('click', resetJob);
+$('#newJob').addEventListener('click', () => {
+  resetJob();
+  $('#jobForm').scrollIntoView({behavior:'smooth',block:'center'});
+});
+$('#prevPage').addEventListener('click', () => { if (page > 1) {page--;renderJobs();} });
+$('#nextPage').addEventListener('click', () => { page++;renderJobs(); });
+for (const id of ['search','filterStatus','dateFrom','dateTo']) {
+  $('#' + id).addEventListener('input',()=>{page=1;renderJobs();});
+}
+$('#clearFilters').addEventListener('click', () => {
+  for (const id of ['search','filterStatus','dateFrom','dateTo']) $('#' + id).value = '';
+  page=1;
+  renderJobs();
+});
+
+document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active',b===button));
+  for (const tab of ['jobs','devices','identify']) $('#'+tab+'Tab').classList.toggle('hidden',tab!==button.dataset.tab);
+}));
+
+async function loadDevices() {
+  const reply = await api('/api/devices');
+  devices = reply.devices || [];
+  renderDevices();
+  const selected = $('#jobDevice').value;
+  $('#jobDevice').innerHTML = '<option value="">Bez przypisanego urządzenia</option>' + devices.map(d =>
+    `<option value="${esc(d.id)}">${esc(d.name)} — ${esc(d.serial)}</option>`).join('');
+  $('#jobDevice').value = devices.some(d => d.id === selected) ? selected : '';
+  if (jobs.length) renderJobs();
+}
+function renderDevices() {
+  const search = $('#deviceSearch').value.trim().toLocaleLowerCase('pl');
+  const list = devices.filter(d => `${d.name} ${d.serial} ${d.model}`.toLocaleLowerCase('pl').includes(search));
+  $('#devicesList').innerHTML = list.length ? list.map(d =>
+    `<div class="device"><div><b>${esc(d.name)}</b><span class="muted">${esc(d.serial)} · ${esc(d.model||'bez modelu')} · ${esc(d.location||'brak lokalizacji')}</span></div>
+    <div class="job-actions">
+      <button class="secondary" data-device-action="edit" data-id="${esc(d.id)}">Edytuj</button>
+      <button class="danger" data-device-action="delete" data-id="${esc(d.id)}">Usuń</button>
+    </div></div>`).join('') : '<div class="empty">Brak urządzeń.</div>';
+}
+$('#deviceSearch').addEventListener('input',renderDevices);
+$('#devicesList').addEventListener('click',async event => {
+  const button = event.target.closest('[data-device-action]');
+  if (!button) return;
+  const d = devices.find(x => x.id === button.dataset.id);
+  if (!d) return;
+  if (button.dataset.deviceAction === 'edit') {
+    const f = $('#deviceForm');
+    for (const field of ['id','serial','name','model','location']) f.elements[field].value = d[field] || '';
+    $('#deviceFormTitle').textContent = 'Edytuj urządzenie';
+    f.scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
+  if (!confirm('Usunąć urządzenie? Powiązania ze zleceniami zostaną wyczyszczone.')) return;
+  button.disabled = true;
+  try {
+    await api('/api/devices/' + encodeURIComponent(d.id),{method:'DELETE'});
+    await Promise.all([loadDevices(),loadJobs()]);
+    showNotice('Urządzenie zostało usunięte.');
+  } catch(err) { showNotice(err.message,true); }
+  finally {button.disabled = false;}
+});
+function resetDevice() {
+  $('#deviceForm').reset();
+  $('#deviceForm').elements.id.value='';
+  $('#deviceFormTitle').textContent='Dodaj urządzenie';
+}
+$('#deviceForm').addEventListener('submit',async event => {
+  event.preventDefault();
+  const f = event.currentTarget;
+  const data = Object.fromEntries(new FormData(f));
+  const id = data.id;
+  delete data.id;
+  const saveButton = f.querySelector('button[type=submit]');
+  saveButton.disabled=true;
+  try {
+    await api(id ? '/api/devices/' + encodeURIComponent(id) : '/api/devices', {
+      method:id ? 'PATCH' : 'POST',body:data
+    });
+    resetDevice();
+    await loadDevices();
+    showNotice('Urządzenie zostało zapisane.');
+  } catch(err) {showNotice(err.message,true);}
+  finally {saveButton.disabled=false;}
+});
+$('#cancelDevice').addEventListener('click',resetDevice);
+$('#identifyForm').addEventListener('submit',async event => {
+  event.preventDefault();
+  const serial = new FormData(event.currentTarget).get('serial');
+  try {
+    const {device:d} = await api('/api/devices/identify?serial=' + encodeURIComponent(serial));
+    $('#identifyResult').innerHTML = `<div class="message"><b>${esc(d.name)}</b><br>Numer: ${esc(d.serial)} · Model: ${esc(d.model||'—')}<br>Lokalizacja: ${esc(d.location||'—')}</div>`;
+  } catch (err) {
+    $('#identifyResult').innerHTML = `<div class="message error">${esc(err.message)}<br>Możesz dodać urządzenie w zakładce „Urządzenia”.</div>`;
+  }
+});
+setAuthMode();
+(async () => {
+  try {
+    const reply = await api('/api/me');
+    user = reply.user;
+    await initApp();
+  } catch (err) {
+    showAuth(err.status === 401 ? '' : err.message);
+  }
+})();
+
+</script>
+</body></html>
