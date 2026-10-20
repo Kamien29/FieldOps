@@ -28,6 +28,7 @@ export default function AppLayout() {
             Zlecenia
           </NavLink>
           <NavLink to="/jobs/new">Dodaj zlecenie</NavLink>
+          <NavLink to="/profile">Profil</NavLink>
         </nav>
 
         <div className="session">

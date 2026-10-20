@@ -1,0 +1,41 @@
+/* 
+Dopisz poniższy blok w backend/src/server.js BEZPOŚREDNIO PO istniejącym
+GET /api/me, przed pierwszym endpointem /api/jobs.
+
+Wymaga, by hashPassword i verifyPassword były już importowane z './auth.js'
+(tak jak w obecnym server.js).
+*/
+
+    if (m === 'PATCH' && p === '/api/me') {
+      const body = await readJson(req);
+      const current = q('SELECT * FROM users WHERE id=?').get(userId);
+      if (!current) throw httpError(401, 'unauthorized');
+
+      const name = requiredStr(body.name, 100, 'name');
+      const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+      if (!EMAIL_RE.test(email) || email.length > 254) throw httpError(400, 'invalid_email');
+
+      const existingEmail = q('SELECT id FROM users WHERE email=? AND id<>?').get(email, userId);
+      if (existingEmail) throw httpError(409, 'email_taken');
+
+      let passwordHash = current.password_hash;
+      const wantsPasswordChange = body.newPassword !== undefined && body.newPassword !== '';
+      if (wantsPasswordChange) {
+        if (typeof body.currentPassword !== 'string' ||
+            !verifyPassword(body.currentPassword, current.password_hash)) {
+          throw httpError(400, 'invalid_current_password');
+        }
+        if (typeof body.newPassword !== 'string' ||
+            body.newPassword.length < 8 || body.newPassword.length > 200) {
+          throw httpError(400, 'invalid_password');
+        }
+        passwordHash = hashPassword(body.newPassword);
+      }
+
+      q('UPDATE users SET name=?, email=?, password_hash=? WHERE id=?')
+        .run(name, email, passwordHash, userId);
+
+      return send(res, 200, {
+        user: { id: userId, name, email },
+      });
+    }

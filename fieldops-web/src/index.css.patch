@@ -1,0 +1,37 @@
+/* Dopisz na końcu fieldops-web/src/index.css */
+.profile-form {
+  max-width: 680px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 20px;
+}
+
+.profile-form .field:first-child,
+.profile-form .field:nth-child(2),
+.profile-divider,
+.profile-form button {
+  grid-column: 1 / -1;
+}
+
+.profile-divider {
+  border-top: 1px solid #e8ebf2;
+  padding-top: 20px;
+  margin-top: 4px;
+}
+
+.profile-divider h3 {
+  margin-bottom: 6px;
+}
+
+.profile-success {
+  color: #166534;
+  background: #dcfce7;
+  padding: 12px;
+  border-radius: 8px;
+  margin: 16px 0;
+}
+
+@media (max-width: 800px) {
+  .profile-form {
+    grid-template-columns: 1fr;
+  }
+}

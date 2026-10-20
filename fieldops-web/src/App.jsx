@@ -6,6 +6,7 @@ import JobDetailsPage from './pages/JobDetailsPage.jsx'
 import JobsPage from './pages/JobsPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import NewJobPage from './pages/NewJobPage.jsx'
+import ProfilePage from './components/ProfilePage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/jobs/new" element={<NewJobPage />} />
         <Route path="/jobs/:jobId" element={<JobDetailsPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
       </Route>
       <Route path="/" element={<Navigate to="/jobs" replace />} />
       <Route path="*" element={<Navigate to="/jobs" replace />} />
