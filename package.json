@@ -1,0 +1,9 @@
+{
+  "name": "fieldops-week1-2-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FieldOps demo implementing weeks 1-2 scope",
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": { "start": "node backend/server.js" }
+}

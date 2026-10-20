@@ -1,4 +1,4 @@
 node_modules/
 data/
 .env
-.expo/
+.DS_Store
