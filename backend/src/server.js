@@ -159,6 +159,38 @@ async function route(req, res) {
     const user = await one('SELECT id,name,email FROM users WHERE id=$1', [userId]);
     return send(res, 200, { user });
   }
+  if (m === 'PATCH' && p === '/api/me') {
+    const body = await readJson(req);
+    const name = required(body.name, 100, 'name');
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    if (!EMAIL_RE.test(email) || email.length > 254) throw error(400, 'invalid_email');
+    const wantsPasswordChange = body.newPassword !== undefined && body.newPassword !== '';
+    if (body.newPassword !== undefined && typeof body.newPassword !== 'string') throw error(400, 'invalid_password');
+    if (wantsPasswordChange && (body.newPassword.length < 8 || body.newPassword.length > 200)) {
+      throw error(400, 'invalid_password');
+    }
+    const updatedUser = await transaction(async (client) => {
+      const current = await one('SELECT id,name,email,password_hash FROM users WHERE id=$1 FOR UPDATE', [userId], client);
+      if (!current) throw error(401, 'unauthorized');
+      const emailChanged = email !== current.email;
+      // Re-authenticate sensitive account changes, not only new password changes.
+      if ((emailChanged || wantsPasswordChange) &&
+          (typeof body.currentPassword !== 'string' ||
+           !verifyPassword(body.currentPassword, current.password_hash))) {
+        throw error(403, 'invalid_current_password');
+      }
+      const passwordHash = wantsPasswordChange ? hashPassword(body.newPassword) : current.password_hash;
+      try {
+        await query('UPDATE users SET name=$1,email=$2,password_hash=$3 WHERE id=$4',
+          [name,email,passwordHash,userId],client);
+      } catch (e) {
+        if (e.code === '23505') throw error(409, 'email_taken');
+        throw e;
+      }
+      return {id:userId,name,email};
+    });
+    return send(res, 200, {user:updatedUser});
+  }
 
   // Device registry: all reads and writes are scoped to the authenticated user.
   if (m === 'GET' && p === '/api/devices') {

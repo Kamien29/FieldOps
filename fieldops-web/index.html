@@ -18,6 +18,18 @@ input,select,textarea{border:1px solid #d4dce7;border-radius:9px;padding:10px 11
 .job{border:1px solid #e5eaf1;border-radius:12px;padding:14px;margin:10px 0;display:grid;grid-template-columns:1fr auto;gap:10px}.job h3{font-size:15px;margin:0 0 5px}.muted{font-size:13px;color:#687789;line-height:1.5}.job-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center}.job-actions button{font-size:12px;padding:8px 10px}
 .badge{display:inline-flex;border-radius:99px;padding:4px 9px;font-size:11px;font-weight:800;background:#edf2f8;color:#536273}.badge.to_do{background:#fff1d6;color:#925b00}.badge.in_progress{background:#e5efff;color:#155eef}.badge.done{background:#dff7e8;color:#167647}.badge.cancelled{background:#fee4e2;color:#b42318}
 form.fields{display:grid;gap:12px}.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}.empty{padding:28px;text-align:center;color:#758397}.device{padding:12px;border:1px solid #e5eaf1;border-radius:10px;margin:8px 0;display:flex;justify-content:space-between;gap:10px}.device b{display:block}.message{padding:11px 13px;border-radius:9px;margin:10px 0;background:#ecfdf3;color:#067647}.message.error{background:#fef3f2;color:#b42318}.hidden{display:none!important}
+/* Profil korzysta z tych samych kart i pól co panel główny. */
+.profile-security-fields{display:grid;gap:12px}
+.profile-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.profile-card{min-width:0}
+.profile-card h2{margin:0 0 8px;font-size:19px}
+.profile-card h3{margin:0 0 10px;font-size:16px}
+.profile-help{margin:4px 0 18px;color:#687789;font-size:13px;line-height:1.6}
+.profile-note{margin-top:16px;border-radius:10px;background:#f1f5ff;padding:12px;color:#345176;font-size:13px;line-height:1.5}
+.profile-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+.profile-actions button{min-width:160px}
+.profile-badge{display:inline-block;border-radius:999px;background:#e4edff;color:#155eef;padding:6px 12px;font-size:12px;font-weight:800;margin-bottom:12px}
+@media(max-width:800px){.profile-grid{grid-template-columns:1fr}}
 .auth-wrap{min-height:calc(100vh - 70px);display:grid;place-items:center;padding:24px}.auth-card{width:min(430px,100%);padding:28px}.auth-card h1{font-size:26px}.auth-card form{display:grid;gap:14px}.auth-switch{text-align:center;margin-top:16px;color:#64748b;font-size:14px}.link{color:#155eef;background:none;padding:0}
 footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
 @media(max-width:800px){.stats{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.job{grid-template-columns:1fr}.job-actions{justify-content:flex-start}.user span{display:none}main{margin-top:20px}.two{grid-template-columns:1fr}}
@@ -27,9 +39,9 @@ footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
 <header><div class="brand">Field<span>Ops</span></div><div class="user"><span id="userName">Tryb demonstracyjny</span><button id="logout" class="secondary hidden">Wyloguj</button></div></header>
 <div id="auth" class="auth-wrap"><section class="auth-card"><div class="eyebrow">Mobilny pomocnik serwisanta</div><h1 id="authTitle">Zaloguj się</h1><p class="sub">Zarządzaj zleceniami i urządzeniami w jednym miejscu.</p><div id="authMessage"></div><form id="authForm"><label id="nameWrap" class="hidden">Imię / nazwa użytkownika<input name="name" minlength="2"></label><label>E-mail<input name="email" type="email" required autocomplete="email" placeholder="serwisant@firma.pl"></label><label>Hasło<input name="password" type="password" required minlength="8" autocomplete="current-password" placeholder="Minimum 8 znaków"></label><button id="authSubmit">Zaloguj</button></form><div class="auth-switch"><span id="authPrompt">Nie masz konta?</span> <button class="link" id="switchAuth">Utwórz konto</button></div><p class="muted">Konta i zlecenia zapisywane są w bezpiecznej bazie danych PostgreSQL.</p></section></div>
 <main id="app" class="hidden">
-<div class="eyebrow">Panel serwisanta</div><h1>Twoje zlecenia</h1><p class="sub">Planuj pracę, pilnuj terminów i prowadź rejestr obsługiwanych urządzeń.</p>
-<div class="stats"><div class="stat"><small>Wszystkie zlecenia</small><strong id="sAll">0</strong></div><div class="stat"><small>Do wykonania</small><strong id="sTodo">0</strong></div><div class="stat"><small>W realizacji</small><strong id="sProgress">0</strong></div><div class="stat"><small>Wykonane</small><strong id="sDone">0</strong></div></div>
-<div class="tabs"><button class="active" data-tab="jobs">Zlecenia</button><button data-tab="devices">Urządzenia</button><button data-tab="identify">Identyfikacja</button></div>
+<div class="eyebrow" id="mainEyebrow">Panel serwisanta</div><h1 id="mainTitle">Twoje zlecenia</h1><p class="sub" id="mainSubtitle">Planuj pracę, pilnuj terminów i prowadź rejestr obsługiwanych urządzeń.</p>
+<div class="stats" id="dashboardStats"><div class="stat"><small>Wszystkie zlecenia</small><strong id="sAll">0</strong></div><div class="stat"><small>Do wykonania</small><strong id="sTodo">0</strong></div><div class="stat"><small>W realizacji</small><strong id="sProgress">0</strong></div><div class="stat"><small>Wykonane</small><strong id="sDone">0</strong></div></div>
+<nav class="tabs" aria-label="Nawigacja FieldOps"><button class="active" data-tab="jobs" type="button">Zlecenia</button><button data-tab="devices" type="button">Urządzenia</button><button data-tab="identify" type="button">Identyfikacja</button><button data-tab="profile" type="button">Profil</button></nav>
 <div id="notice"></div>
 <section id="jobsTab">
 <div class="toolbar"><input id="search" placeholder="Szukaj tytułu, klienta…"><select id="filterStatus"><option value="">Wszystkie statusy</option><option value="new">Do wykonania</option><option value="in_progress">W realizacji</option><option value="done">Wykonane</option><option value="cancelled">Anulowane</option></select><label style="width:auto">Od<input id="dateFrom" type="date"></label><label style="width:auto">Do<input id="dateTo" type="date"></label><button id="clearFilters" class="secondary">Wyczyść</button><button id="newJob">+ Dodaj zlecenie</button></div>
@@ -38,7 +50,41 @@ footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
 </section>
 <section id="devicesTab" class="hidden"><div class="grid"><section class="panel"><h2>Rejestr urządzeń</h2><div class="toolbar"><input id="deviceSearch" placeholder="Szukaj nazwy lub numeru…"></div><div id="devicesList"></div></section><section class="panel"><h2 id="deviceFormTitle">Dodaj urządzenie</h2><form class="fields" id="deviceForm"><input type="hidden" name="id"><label>Numer identyfikacyjny / seryjny<input name="serial" required placeholder="np. AC-001"></label><label>Nazwa urządzenia<input name="name" required placeholder="np. Klimatyzator"></label><div class="two"><label>Model<input name="model"></label><label>Lokalizacja<input name="location"></label></div><div class="toolbar"><button type="submit">Zapisz urządzenie</button><button type="button" id="cancelDevice" class="secondary">Wyczyść</button></div></form></section></div></section>
 <section id="identifyTab" class="hidden"><div class="grid"><section class="panel"><h2>Identyfikacja urządzenia</h2><p class="muted">Wpisz numer z tabliczki lub kodu QR. W tym prototypie ręczne wpisanie numeru jest dostępne; skanowanie aparatem można dodać jako osobną integrację.</p><form id="identifyForm" class="fields"><label>Numer identyfikacyjny<input name="serial" required placeholder="np. FO-AC-001"></label><button>Znajdź urządzenie</button></form><div id="identifyResult"></div></section><section class="panel"><h2>Jak to działa?</h2><p class="muted">Numer identyfikacyjny jest unikalny w obrębie konta. Zlecenie może wskazywać urządzenie z rejestru lub działać bez powiązania. Nie znaleziono urządzenia? Dodaj je w zakładce „Urządzenia”.</p></section></div></section>
-</main><footer>FieldOps · demonstrator zakresu tygodnia 1–2 · dane odseparowane per konto</footer>
+<section id="profileTab" class="hidden" aria-label="Profil użytkownika">
+  <div class="profile-badge">Twoje konto</div>
+  <div class="profile-grid">
+    <section class="panel profile-card">
+      <h2>Dane profilu</h2>
+      <p class="profile-help">Możesz zmienić nazwę konta i adres e-mail. Dane zapisują się w PostgreSQL.</p>
+      <form class="fields" id="profileForm">
+        <label>Imię i nazwisko / nazwa
+          <input name="name" type="text" maxlength="100" autocomplete="name" required></label>
+        <label>Adres e-mail
+          <input name="email" type="email" maxlength="254" autocomplete="email" required></label>
+        <p class="profile-help">Jeżeli zmieniasz e-mail, potwierdź operację obecnym hasłem w sekcji obok.</p>
+        <div class="profile-actions">
+          <button type="submit" id="profileSave">Zapisz zmiany</button>
+          <button type="button" class="secondary" id="profileReset">Anuluj zmiany</button>
+        </div>
+      </form>
+    </section>
+    <section class="panel profile-card">
+      <h2>Bezpieczeństwo konta</h2>
+      <p class="profile-help">Aby zmienić hasło, podaj obecne i wpisz nowe dwa razy. Pozostaw pola nowego hasła puste, jeśli nie chcesz go zmieniać.</p>
+      <div class="profile-security-fields">
+        <label>Obecne hasło
+          <input id="profileCurrentPassword" type="password" autocomplete="current-password" maxlength="200" form="profileForm"></label>
+        <label>Nowe hasło
+          <input id="profileNewPassword" type="password" autocomplete="new-password" minlength="8" maxlength="200" form="profileForm"></label>
+        <label>Potwierdź nowe hasło
+          <input id="profileConfirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="200" form="profileForm"></label>
+      </div>
+      <div class="profile-note">Ze względów bezpieczeństwa zmiana e-maila lub hasła wymaga podania obecnego hasła. Po zapisaniu użyj nowego e-maila lub hasła przy kolejnym logowaniu.</div>
+    </section>
+  </div>
+  <div id="profileMessage" role="status" aria-live="polite"></div>
+</section>
+</main><footer>FieldOps · dane odseparowane per konto</footer>
 <script>
 'use strict';
 // FieldOps panel (legacy appearance) backed by the PostgreSQL API.
@@ -58,6 +104,7 @@ const apiErrors = {
   device_not_found:'Nie znaleziono urządzenia.', job_not_found:'Nie znaleziono zlecenia.',
   csrf_blocked:'Odśwież stronę i spróbuj ponownie.',
   conflict:'Zlecenie zostało zmienione na innym urządzeniu. Odśwież listę i spróbuj ponownie.',
+  invalid_current_password:'Nieprawidłowe obecne hasło.',
   internal_error:'Błąd serwera. Sprawdź konfigurację backendu w Vercel.'
 };
 let user = null;
@@ -111,6 +158,7 @@ function showApp() {
   $('#app').classList.remove('hidden');
   $('#logout').classList.remove('hidden');
   $('#userName').textContent = user?.name || user?.email || '';
+  if (!$('#profileTab').classList.contains('hidden')) populateProfile();
 }
 function setAuthMode() {
   $('#authTitle').textContent = registerMode ? 'Utwórz konto' : 'Zaloguj się';
@@ -145,6 +193,7 @@ $('#logout').addEventListener('click', async () => {
 });
 async function initApp() {
   showApp();
+  setTab(location.pathname === '/profile' ? 'profile' : 'jobs');
   try {
     await Promise.all([loadDevices(), loadJobs()]);
   } catch (err) {
@@ -302,10 +351,94 @@ $('#clearFilters').addEventListener('click', () => {
   renderJobs();
 });
 
+function populateProfile() {
+  if (!user) return;
+  const form = $('#profileForm');
+  form.elements.name.value = user.name || '';
+  form.elements.email.value = user.email || '';
+  clearProfilePasswords();
+}
+function clearProfilePasswords() {
+  $('#profileCurrentPassword').value = '';
+  $('#profileNewPassword').value = '';
+  $('#profileConfirmPassword').value = '';
+}
+function profileMessage(text, isError = false) {
+  $('#profileMessage').innerHTML = text ? `<div class="message ${isError ? 'error' : ''}">${esc(text)}</div>` : '';
+}
+function setTab(tab, updateHistory = false) {
+  const selected = ['jobs','devices','identify','profile'].includes(tab) ? tab : 'jobs';
+  document.querySelectorAll('[data-tab]').forEach(button => {
+    const active = button.dataset.tab === selected;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+  for (const name of ['jobs','devices','identify','profile']) {
+    $('#'+name+'Tab').classList.toggle('hidden',name !== selected);
+  }
+  $('#dashboardStats').classList.toggle('hidden',selected === 'profile');
+  $('#mainEyebrow').textContent = selected === 'profile' ? 'Konto użytkownika' : 'Panel serwisanta';
+  $('#mainTitle').textContent = selected === 'profile' ? 'Twój profil' : 'Twoje zlecenia';
+  $('#mainSubtitle').textContent = selected === 'profile'
+    ? 'Zarządzaj danymi osobowymi i hasłem do FieldOps.'
+    : 'Planuj pracę, pilnuj terminów i prowadź rejestr obsługiwanych urządzeń.';
+  showNotice('');
+  if (selected === 'profile') {
+    populateProfile();
+    profileMessage('');
+  }
+  if (updateHistory) {
+    const path = selected === 'profile' ? '/profile' : '/';
+    if (location.pathname !== path) history.pushState({tab:selected},'',path);
+    else history.replaceState({tab:selected},'',path);
+  }
+}
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => {
-  document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('active',b===button));
-  for (const tab of ['jobs','devices','identify']) $('#'+tab+'Tab').classList.toggle('hidden',tab!==button.dataset.tab);
+  setTab(button.dataset.tab,true);
 }));
+window.addEventListener('popstate', () => {
+  if (user) setTab(history.state?.tab || (location.pathname === '/profile' ? 'profile' : 'jobs'));
+});
+$('#profileReset').addEventListener('click', () => {
+  populateProfile();
+  profileMessage('Zmiany zostały anulowane.');
+});
+$('#profileForm').addEventListener('submit',async event => {
+  event.preventDefault();
+  if (!user) return showAuth('Zaloguj się ponownie.');
+  const form = event.currentTarget;
+  const name = form.elements.name.value.trim();
+  const email = form.elements.email.value.trim().toLowerCase();
+  const currentPassword = $('#profileCurrentPassword').value;
+  const newPassword = $('#profileNewPassword').value;
+  const confirmPassword = $('#profileConfirmPassword').value;
+  profileMessage('');
+  if (!name || name.length > 100) return profileMessage('Podaj poprawne imię lub nazwę (maks. 100 znaków).',true);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return profileMessage('Podaj poprawny adres e-mail.',true);
+  const emailChanged = email !== user.email.toLowerCase();
+  if (newPassword !== confirmPassword) return profileMessage('Nowe hasła nie są takie same.',true);
+  if (newPassword && (newPassword.length < 8 || newPassword.length > 200)) return profileMessage('Nowe hasło musi mieć od 8 do 200 znaków.',true);
+  if ((emailChanged || newPassword) && !currentPassword) return profileMessage('Aby zmienić e-mail lub hasło, wpisz obecne hasło.',true);
+  if (confirmPassword && !newPassword) return profileMessage('Podaj nowe hasło.',true);
+  const button = $('#profileSave');
+  button.disabled = true;
+  button.textContent = 'Zapisywanie…';
+  try {
+    const body = {name,email};
+    if (emailChanged || newPassword) body.currentPassword = currentPassword;
+    if (newPassword) body.newPassword = newPassword;
+    const result = await api('/api/me',{method:'PATCH',body});
+    user = result.user;
+    $('#userName').textContent = user.name || user.email || '';
+    populateProfile();
+    profileMessage('Profil został zapisany.');
+  } catch (error) {
+    profileMessage(error.message,true);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Zapisz zmiany';
+  }
+});
 
 async function loadDevices() {
   const reply = await api('/api/devices');
