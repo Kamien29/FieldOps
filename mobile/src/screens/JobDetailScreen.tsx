@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -29,18 +29,25 @@ export default function JobDetailScreen({ route, navigation }: Props) {
   const [report, setReport] = useState<Report | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [note, setNote] = useState('');
+  const [recipientFullName, setRecipientFullName] = useState('');
   const [busy, setBusy] = useState<'photo' | 'location' | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const latestNote = useRef('');
   const dirty = useRef(false);
   const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const noteLoaded = useRef(false);
+  const latestRecipientName = useRef('');
+  const recipientDirty = useRef(false);
+  const recipientTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const load = useCallback(async () => {
     const [j, r, p] = await Promise.all([getJob(jobId), getReport(jobId), listPhotos(jobId)]);
     setJob(j); setReport(r); setPhotos(p);
     if (!noteLoaded.current || r.submitted) {
       setNote(r.note); latestNote.current = r.note; noteLoaded.current = true;
+      setRecipientFullName(r.recipientFullName);
+      latestRecipientName.current = r.recipientFullName;
     }
   }, [jobId]);
 
@@ -53,7 +60,14 @@ export default function JobDetailScreen({ route, navigation }: Props) {
       await saveDraft(jobId, { note: latestNote.current });
     }
   }, [jobId]);
-  useEffect(() => () => { void flushNote(); }, [flushNote]); // autosave when leaving the screen
+  const flushRecipientName = useCallback(async () => {
+    clearTimeout(recipientTimer.current);
+    if (recipientDirty.current) {
+      recipientDirty.current = false;
+      await saveDraft(jobId, { recipientFullName: latestRecipientName.current });
+    }
+  }, [jobId]);
+  useEffect(() => () => { void flushNote(); void flushRecipientName(); }, [flushNote, flushRecipientName]);
 
   const onNote = (text: string) => {
     setNote(text);
@@ -61,6 +75,13 @@ export default function JobDetailScreen({ route, navigation }: Props) {
     dirty.current = true;
     clearTimeout(noteTimer.current);
     noteTimer.current = setTimeout(() => { void flushNote(); }, 600);
+  };
+  const onRecipientName = (text: string) => {
+    setRecipientFullName(text);
+    latestRecipientName.current = text;
+    recipientDirty.current = true;
+    clearTimeout(recipientTimer.current);
+    recipientTimer.current = setTimeout(() => { void flushRecipientName(); }, 600);
   };
 
   if (!job || !report) return <View style={s.screen} />;
@@ -70,7 +91,15 @@ export default function JobDetailScreen({ route, navigation }: Props) {
 
   const takePhoto = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) { Alert.alert(t.permCamera); return; }
+    if (!perm.granted) {
+      Alert.alert(t.cameraPermissionTitle, t.photoCameraPermissionDenied, [
+        { text: t.cancel, style: 'cancel' },
+        { text: t.cameraSettings, onPress: () => {
+          void Linking.openSettings().catch(() => Alert.alert(t.cameraUnavailable));
+        } },
+      ]);
+      return;
+    }
     setBusy('photo');
     try {
       const shot = await ImagePicker.launchCameraAsync({ quality: 0.8 });
@@ -109,7 +138,10 @@ export default function JobDetailScreen({ route, navigation }: Props) {
       let pos = await Promise.race([Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), timeout]);
       if (!pos) pos = await Location.getLastKnownPositionAsync();
       if (!pos) { Alert.alert(t.locationFailed); return; }
-      await saveDraft(jobId, { lat: pos.coords.latitude, lng: pos.coords.longitude });
+      await saveDraft(jobId, {
+        lat: pos.coords.latitude, lng: pos.coords.longitude,
+        locationAccuracy: pos.coords.accuracy ?? null,
+      });
     } catch {
       Alert.alert(t.locationFailed);
     } finally {
@@ -118,14 +150,25 @@ export default function JobDetailScreen({ route, navigation }: Props) {
   };
 
   const submit = () => {
+    if (submitting) return;
     if (!latestNote.current.trim()) { Alert.alert(t.noteRequired); return; }
+    if (latestRecipientName.current.trim().split(/\s+/).length < 2) { Alert.alert(t.recipientNameRequired); return; }
+    if (!report.signatureSvg) { Alert.alert(t.signatureRequired); return; }
     Alert.alert(t.confirmSubmitTitle, t.confirmSubmitBody, [
       { text: t.cancel, style: 'cancel' },
       { text: t.confirm, onPress: async () => {
-        await flushNote();
-        await submitReport(jobId);
-        void syncNow();
-        navigation.goBack();
+        setSubmitting(true);
+        try {
+          await flushNote();
+          await flushRecipientName();
+          await submitReport(jobId);
+          void syncNow();
+          navigation.goBack();
+        } catch {
+          Alert.alert(t.submitFailed);
+        } finally {
+          setSubmitting(false);
+        }
       } },
     ]);
   };
@@ -185,6 +228,16 @@ export default function JobDetailScreen({ route, navigation }: Props) {
                 style={[s.input, { minHeight: 100, textAlignVertical: 'top', marginBottom: 14 }]}
                 multiline value={note} onChangeText={onNote} editable={canEdit} />
 
+              <Text style={s.muted}>{t.recipientName}</Text>
+              <TextInput
+                style={[s.input, { marginBottom: 14 }]}
+                value={recipientFullName}
+                onChangeText={onRecipientName}
+                editable={canEdit}
+                autoCapitalize="words"
+                maxLength={200}
+              />
+
               <Text style={s.muted}>{t.deviceCode}</Text>
               <View style={[s.row, { marginBottom: 14, justifyContent: 'space-between' }]}>
                 <Text style={[s.text, { flex: 1 }]}>{report.deviceCode ?? t.none}</Text>
@@ -197,7 +250,9 @@ export default function JobDetailScreen({ route, navigation }: Props) {
               <Text style={s.muted}>{t.location}</Text>
               <View style={[s.row, { marginBottom: 14, justifyContent: 'space-between' }]}>
                 <Text style={[s.text, { flex: 1 }]}>
-                  {report.lat != null && report.lng != null ? `${report.lat.toFixed(5)}, ${report.lng.toFixed(5)}` : t.none}
+                  {report.lat != null && report.lng != null
+                    ? `${report.lat.toFixed(5)}, ${report.lng.toFixed(5)}${report.locationAccuracy != null ? ` (±${Math.round(report.locationAccuracy)} m)` : ''}`
+                    : t.none}
                 </Text>
                 {canEdit && <Btn title={busy === 'location' ? t.gettingLocation : t.getLocation} kind="secondary" busy={busy === 'location'} onPress={getLocation} />}
               </View>
@@ -219,6 +274,12 @@ export default function JobDetailScreen({ route, navigation }: Props) {
                   <SvgXml xml={report.signatureSvg} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" />
                 </View>
               ) : <Text style={[s.text, { marginVertical: 6 }]}>{t.none}</Text>}
+              {locked && (
+                <View style={{ marginVertical: 8 }}>
+                  <Text style={s.text}>{t.recipientName}: {report.recipientFullName || t.none}</Text>
+                  <Text style={s.text}>{t.completedAt}: {report.completedAt ? fmtDate(report.completedAt) : t.none}</Text>
+                </View>
+              )}
               {canEdit && (
                 <Btn title={report.signatureSvg ? t.resign : t.sign} kind="secondary"
                   onPress={async () => { await flushNote(); navigation.navigate('Signature', { jobId }); }} />
@@ -226,7 +287,7 @@ export default function JobDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {canEdit && <Btn title={t.submit} onPress={submit} />}
+          {canEdit && <Btn title={t.submit} busy={submitting} disabled={submitting} onPress={submit} />}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

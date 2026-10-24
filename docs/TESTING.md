@@ -1,8 +1,24 @@
 # Testing
 
 ## Automated (backend) — `cd backend && npm test`
-10 integration tests (real HTTP server + in-memory SQLite): auth, ownership isolation, delta sync, idempotent replay,
-required headers, optimistic-version conflict (409) and resend, photo upload + report + photo access control, validation.
+
+Runs the authentication and report-input validation unit tests without connecting to PostgreSQL. The legacy
+`test/api.test.js` targets an older SQLite backend API and is not part of the current PostgreSQL test command. Report
+transaction, access-control, and authenticated photo delivery should be verified against a disposable local PostgreSQL
+database after migrations; never point these checks at production.
+
+## Web — manual report flow
+
+Run the Vite client and PostgreSQL API locally as described in the root README. In the active `fieldops-web/index.html`
+interface, verify:
+
+| # | Scenario | Steps | Expected |
+|---|---|---|---|
+| 1 | Required completion report | Start a job; try to submit an empty report, then submit with a work description, recipient full name, and drawn signature | Empty or incomplete reports are blocked; a valid report saves and completes the job in one action |
+| 2 | Photos and retry | Add valid JPEG/PNG/WebP images, remove one, then submit; interrupt an upload and retry | Previews and removal work; successful uploads are reused; the report links only to uploaded photos |
+| 3 | Optional location | Submit without requesting location, then repeat and request it after granting browser permission | Location is absent unless explicitly requested and granted |
+| 4 | Saved report | Open a completed job's report and click a photo | Report fields, signature, and private authenticated photos are visible; no report edit action is offered |
+| 5 | Completion guard | Inspect an in-progress job before submitting its report | The UI offers report completion, not a direct `done` status action |
 
 ## Mobile — checks to run
 `cd mobile && npm run typecheck` (must be clean), then the manual scenarios below on a **real device** (camera, GPS and

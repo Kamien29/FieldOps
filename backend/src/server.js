@@ -2,12 +2,13 @@ import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { one, all, query, transaction } from './db.js';
 import { TOKEN_TTL_SECONDS, hashPassword, signToken, verifyPassword, verifyToken } from './auth.js';
+import {
+  decodePhotoUpload, MAX_PHOTO_BYTES_PER_JOB, MAX_PHOTOS_PER_JOB,
+} from './report-validation.js';
+import { createReport } from './report-service.js';
 
 const MAX_BODY = 15 * 1024 * 1024;
-const MAX_PHOTO = 10 * 1024 * 1024;
 const STATUSES = ['new', 'in_progress', 'done', 'cancelled'];
-const MIMES = ['image/jpeg', 'image/png', 'image/webp'];
-const ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SESSION_COOKIE = 'fieldops_session';
 const error = (status, code, extra = {}) => Object.assign(new Error(code), { status, code, extra });
@@ -60,11 +61,6 @@ const optionalText = (value, max, field) => {
   if (typeof value !== 'string' || value.length > max) throw error(400, `invalid_${field}`);
   return value;
 };
-const optionalNumber = (value, min, max, field) => {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) throw error(400, `invalid_${field}`);
-  return value;
-};
 const now = () => new Date().toISOString();
 async function jobJson(row, db) {
   const report = await one('SELECT * FROM reports WHERE job_id=$1', [row.id], db);
@@ -74,8 +70,11 @@ async function jobJson(row, db) {
     deviceId: row.device_id ?? null,
     createdAt: row.created_at || null, updatedAt: row.updated_at,
     report: report ? {
-      note: report.note, lat: report.lat, lng: report.lng, deviceCode: report.device_code,
-      signatureSvg: report.signature_svg, photoIds: JSON.parse(report.photo_ids), updatedAt: report.updated_at,
+      note: report.note, lat: report.lat, lng: report.lng,
+      locationAccuracy: report.location_accuracy, deviceCode: report.device_code,
+      recipientFullName: report.recipient_full_name, signatureSvg: report.signature_svg,
+      photoIds: JSON.parse(report.photo_ids), createdAt: report.created_at,
+      completedAt: report.completed_at, updatedAt: report.updated_at,
     } : null,
   };
 }
@@ -328,6 +327,9 @@ async function route(req, res) {
       const row = await ownedJob(mt[1], userId, client, true);
       if (!STATUSES.includes(body.status)) throw error(400, 'invalid_status');
       await checkVersion(row, body, client);
+      if (body.status === 'done' && !await one('SELECT 1 FROM reports WHERE job_id=$1', [row.id], client)) {
+        throw error(409, 'report_required');
+      }
       return { status: 200, body: { job: await jobJson(await touchJob(row.id, client, body.status), client) } };
     });
     return send(res, result.status, result.body);
@@ -335,55 +337,57 @@ async function route(req, res) {
   if (m === 'PUT' && (mt = p.match(/^\/api\/jobs\/([^/]+)\/report$/))) {
     const body = await readJson(req);
     const result = await idempotent(req, userId, async (client) => {
-      const row = await ownedJob(mt[1], userId, client, true);
-      const note = optionalText(body.note, 10000, 'note');
-      if (note === null) throw error(400, 'invalid_note');
-      const lat = optionalNumber(body.lat, -90, 90, 'lat');
-      const lng = optionalNumber(body.lng, -180, 180, 'lng');
-      const device = optionalText(body.deviceCode, 200, 'deviceCode');
-      const signature = optionalText(body.signatureSvg, 200000, 'signatureSvg');
-      const ids = body.photoIds ?? [];
-      if (!Array.isArray(ids) || ids.length > 50 || ids.some(i => typeof i !== 'string')) throw error(400, 'invalid_photoIds');
-      for (const id of ids) {
-        if (!await one('SELECT 1 FROM photos WHERE id=$1 AND job_id=$2', [id,row.id], client)) throw error(422, 'unknown_photo', { photoId: id });
-      }
-      await checkVersion(row, body, client);
-      await query(`INSERT INTO reports(job_id,note,lat,lng,device_code,signature_svg,photo_ids,updated_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(job_id) DO UPDATE
-        SET note=EXCLUDED.note,lat=EXCLUDED.lat,lng=EXCLUDED.lng,device_code=EXCLUDED.device_code,
-            signature_svg=EXCLUDED.signature_svg,photo_ids=EXCLUDED.photo_ids,updated_at=EXCLUDED.updated_at`,
-      [row.id,note,lat,lng,device,signature,JSON.stringify(ids),now()], client);
-      return { status: 200, body: { job: await jobJson(await touchJob(row.id, client), client) } };
+      return createReport({
+        client, userId, jobId: mt[1], body, ownedJob, one, query, checkVersion, touchJob, jobJson, now,
+      });
     });
     return send(res, result.status, result.body);
   }
   if (m === 'POST' && (mt = p.match(/^\/api\/jobs\/([^/]+)\/photos$/))) {
     const body = await readJson(req);
-    const row = await ownedJob(mt[1], userId);
-    if (typeof body.id !== 'string' || !ID_RE.test(body.id)) throw error(400, 'invalid_photo_id');
-    if (!MIMES.includes(body.mime)) throw error(400, 'invalid_mime');
-    if (typeof body.dataBase64 !== 'string' || !body.dataBase64 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(body.dataBase64)) throw error(400,'invalid_data');
-    const data = Buffer.from(body.dataBase64,'base64');
-    if (!data.length) throw error(400, 'invalid_data');
-    if (data.length > MAX_PHOTO) throw error(413, 'payload_too_large');
-    const existing = await one('SELECT job_id FROM photos WHERE id=$1', [body.id]);
-    if (existing && existing.job_id !== row.id) throw error(409, 'id_taken');
-    if (!existing) {
-      try { await query('INSERT INTO photos(id,job_id,mime,data,created_at) VALUES($1,$2,$3,$4,$5)', [body.id,row.id,body.mime,data,now()]); }
-      catch (err) {
-        if (err.code !== '23505') throw err;
-        const conflict = await one('SELECT job_id FROM photos WHERE id=$1', [body.id]);
-        if (!conflict || conflict.job_id !== row.id) throw error(409,'id_taken');
-        return send(res, 200, { id: body.id });
+    const photo = decodePhotoUpload(body);
+    const status = await transaction(async (client) => {
+      const row = await ownedJob(mt[1], userId, client, true);
+      if (row.status !== 'in_progress') throw error(409, 'job_not_in_progress');
+      const existing = await one('SELECT job_id,mime,data FROM photos WHERE id=$1', [photo.id], client);
+      if (existing) {
+        if (existing.job_id !== row.id || existing.mime !== photo.mime || !Buffer.from(existing.data).equals(photo.data)) {
+          throw error(409, 'photo_id_taken');
+        }
+        return 200;
       }
-    }
-    return send(res, existing ? 200 : 201, { id: body.id });
+      const totals = await one(
+        'SELECT COUNT(*)::integer AS count, COALESCE(SUM(octet_length(data)),0)::bigint AS bytes FROM photos WHERE job_id=$1',
+        [row.id], client);
+      if (totals.count >= MAX_PHOTOS_PER_JOB) throw error(413, 'too_many_photos');
+        if (Number(totals.bytes) + photo.data.length > MAX_PHOTO_BYTES_PER_JOB) throw error(413, 'photo_total_too_large');
+        try {
+          await query('INSERT INTO photos(id,job_id,mime,data,created_at) VALUES($1,$2,$3,$4,$5)',
+            [photo.id,row.id,photo.mime,photo.data,now()], client);
+        } catch (err) {
+          if (err.code === '23505') throw error(409, 'photo_id_taken');
+          throw err;
+        }
+      return 201;
+    });
+    return send(res, status, { id: photo.id });
   }
   if (m === 'GET' && (mt = p.match(/^\/api\/photos\/([^/]+)$/))) {
     const ph = await one('SELECT p.mime,p.data FROM photos p JOIN jobs j ON j.id=p.job_id WHERE p.id=$1 AND j.assigned_to=$2', [mt[1],userId]);
     if (!ph) throw error(404,'photo_not_found');
     res.writeHead(200, { 'Content-Type': ph.mime, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
     return res.end(ph.data);
+  }
+  if (m === 'DELETE' && (mt = p.match(/^\/api\/jobs\/([^/]+)\/photos\/([^/]+)$/))) {
+    await transaction(async (client) => {
+      const row = await ownedJob(mt[1], userId, client, true);
+      if (row.status !== 'in_progress' ||
+          await one('SELECT 1 FROM reports WHERE job_id=$1', [row.id], client)) {
+        throw error(409, 'photo_delete_not_allowed');
+      }
+      await query('DELETE FROM photos WHERE id=$1 AND job_id=$2', [mt[2],row.id], client);
+    });
+    return send(res, 200, { ok: true });
   }
   throw error(404,'not_found');
 }

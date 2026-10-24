@@ -13,11 +13,13 @@ async function init() {
     CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, customer TEXT NOT NULL, address TEXT NOT NULL,
       scheduled_at TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL,
+      has_report INTEGER NOT NULL DEFAULT 0,
       sync_state TEXT NOT NULL DEFAULT 'synced', sync_error TEXT, conflict_json TEXT
     );
     CREATE TABLE IF NOT EXISTS reports (
-      job_id TEXT PRIMARY KEY, note TEXT NOT NULL DEFAULT '', lat REAL, lng REAL,
-      device_code TEXT, signature_svg TEXT, submitted INTEGER NOT NULL DEFAULT 0
+      job_id TEXT PRIMARY KEY, note TEXT NOT NULL DEFAULT '', recipient_full_name TEXT NOT NULL DEFAULT '',
+      lat REAL, lng REAL, location_accuracy REAL, device_code TEXT, signature_svg TEXT, submitted INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT, completed_at TEXT
     );
     CREATE TABLE IF NOT EXISTS photos (
       id TEXT PRIMARY KEY, job_id TEXT NOT NULL, file_name TEXT NOT NULL,
@@ -29,6 +31,23 @@ async function init() {
     );
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
   `);
+  const reportColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(reports)');
+  const jobColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(jobs)');
+  if (!jobColumns.some((column) => column.name === 'has_report')) {
+    await db.execAsync('ALTER TABLE jobs ADD COLUMN has_report INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!reportColumns.some((column) => column.name === 'recipient_full_name')) {
+    await db.execAsync("ALTER TABLE reports ADD COLUMN recipient_full_name TEXT NOT NULL DEFAULT ''");
+  }
+  if (!reportColumns.some((column) => column.name === 'created_at')) {
+    await db.execAsync('ALTER TABLE reports ADD COLUMN created_at TEXT');
+  }
+  if (!reportColumns.some((column) => column.name === 'completed_at')) {
+    await db.execAsync('ALTER TABLE reports ADD COLUMN completed_at TEXT');
+  }
+  if (!reportColumns.some((column) => column.name === 'location_accuracy')) {
+    await db.execAsync('ALTER TABLE reports ADD COLUMN location_accuracy REAL');
+  }
   return db;
 }
 
@@ -36,17 +55,20 @@ async function init() {
 const mapJob = (r: any): Job => ({
   id: r.id, title: r.title, customer: r.customer, address: r.address, scheduledAt: r.scheduled_at,
   status: r.status, version: r.version, syncState: r.sync_state, syncError: r.sync_error,
-  conflict: r.conflict_json ? JSON.parse(r.conflict_json) : null,
+  conflict: r.conflict_json ? JSON.parse(r.conflict_json) : null, hasReport: !!r.has_report,
 });
 const mapReport = (r: any): Report => ({
-  jobId: r.job_id, note: r.note, lat: r.lat, lng: r.lng, deviceCode: r.device_code,
-  signatureSvg: r.signature_svg, submitted: !!r.submitted,
+  jobId: r.job_id, note: r.note, recipientFullName: r.recipient_full_name ?? '',
+  lat: r.lat, lng: r.lng, locationAccuracy: r.location_accuracy ?? null, deviceCode: r.device_code,
+  signatureSvg: r.signature_svg, submitted: !!r.submitted, createdAt: r.created_at ?? null,
+  completedAt: r.completed_at ?? null,
 });
 const mapPhoto = (r: any): Photo => ({
   id: r.id, jobId: r.job_id, fileName: r.file_name, uploaded: !!r.uploaded, createdAt: r.created_at,
 });
 const emptyReport = (jobId: string): Report => ({
-  jobId, note: '', lat: null, lng: null, deviceCode: null, signatureSvg: null, submitted: false,
+  jobId, note: '', recipientFullName: '', lat: null, lng: null, locationAccuracy: null, deviceCode: null,
+  signatureSvg: null, submitted: false, createdAt: null, completedAt: null,
 });
 
 /* ---------- meta ---------- */
@@ -101,9 +123,10 @@ export async function blockedJobIds(): Promise<string[]> {
 }
 
 /* ---------- local edits (UI) ---------- */
-type Draft = Partial<Pick<Report, 'note' | 'lat' | 'lng' | 'deviceCode' | 'signatureSvg'>>;
+type Draft = Partial<Pick<Report, 'note' | 'recipientFullName' | 'lat' | 'lng' | 'locationAccuracy' | 'deviceCode' | 'signatureSvg'>>;
 const DRAFT_COLUMNS: Record<keyof Draft, string> = {
-  note: 'note', lat: 'lat', lng: 'lng', deviceCode: 'device_code', signatureSvg: 'signature_svg',
+  note: 'note', recipientFullName: 'recipient_full_name', lat: 'lat', lng: 'lng', locationAccuracy: 'location_accuracy',
+  deviceCode: 'device_code', signatureSvg: 'signature_svg',
 };
 
 export async function saveDraft(jobId: string, patch: Draft) {
@@ -137,8 +160,12 @@ export async function removePhoto(id: string): Promise<string | null> {
   const db = await getDb();
   const p = await getPhoto(id);
   await db.withTransactionAsync(async () => {
+    if (p?.uploaded) {
+      await enqueueTx(db, 'photo_delete', p.jobId, { photoId: id }, `delete-photo-${id}`);
+    } else {
+      await db.runAsync('DELETE FROM outbox WHERE id=?', [`photo-${id}`]);
+    }
     await db.runAsync('DELETE FROM photos WHERE id=?', [id]);
-    await db.runAsync('DELETE FROM outbox WHERE id=?', [`photo-${id}`]);
   });
   emitDataChange();
   return p?.fileName ?? null;
@@ -158,13 +185,18 @@ export async function submitReport(jobId: string) {
   await db.withTransactionAsync(async () => {
     const r = await getReport(jobId);
     const photos = await listPhotos(jobId);
+    if (!r.note.trim()) throw new Error('note_required');
+    if (r.recipientFullName.trim().split(/\s+/).length < 2) throw new Error('recipient_name_required');
+    if (!r.signatureSvg) throw new Error('signature_required');
+    const completedAt = new Date().toISOString();
     await db.runAsync('INSERT OR IGNORE INTO reports(job_id) VALUES(?)', [jobId]);
-    await db.runAsync('UPDATE reports SET submitted=1 WHERE job_id=?', [jobId]);
+    await db.runAsync('UPDATE reports SET submitted=1,completed_at=? WHERE job_id=?', [completedAt, jobId]);
     await enqueueTx(db, 'report', jobId, {
-      note: r.note, lat: r.lat, lng: r.lng, deviceCode: r.deviceCode,
+      note: r.note, recipientFullName: r.recipientFullName.trim(),
+      lat: r.lat, lng: r.lng, locationAccuracy: r.locationAccuracy, deviceCode: r.deviceCode,
       signatureSvg: r.signatureSvg, photoIds: photos.map((p) => p.id),
     });
-    await setStatusTx(db, jobId, 'done');
+    await db.runAsync("UPDATE jobs SET status='done',has_report=1 WHERE id=?", [jobId]);
   });
   emitDataChange();
 }
@@ -200,21 +232,26 @@ export async function markJobError(jobId: string, message: string) {
 
 async function writeServerJob(db: SQLite.SQLiteDatabase, sj: ServerJob) {
   await db.runAsync(
-    `INSERT INTO jobs(id,title,customer,address,scheduled_at,status,version,sync_state,sync_error,conflict_json)
-     VALUES(?,?,?,?,?,?,?,'synced',NULL,NULL)
+    `INSERT INTO jobs(id,title,customer,address,scheduled_at,status,version,has_report,sync_state,sync_error,conflict_json)
+     VALUES(?,?,?,?,?,?,?,?,'synced',NULL,NULL)
      ON CONFLICT(id) DO UPDATE SET title=excluded.title, customer=excluded.customer, address=excluded.address,
        scheduled_at=excluded.scheduled_at, status=excluded.status, version=excluded.version,
-       sync_state='synced', sync_error=NULL, conflict_json=NULL`,
-    [sj.id, sj.title, sj.customer, sj.address, sj.scheduledAt, sj.status, sj.version]);
+       has_report=excluded.has_report, sync_state='synced', sync_error=NULL, conflict_json=NULL`,
+    [sj.id, sj.title, sj.customer, sj.address, sj.scheduledAt, sj.status, sj.version, sj.report ? 1 : 0]);
   if (sj.report) {
     // Never overwrite an unsent local draft; overwrite submitted/missing local reports.
     const local = await db.getFirstAsync<{ submitted: number }>('SELECT submitted FROM reports WHERE job_id=?', [sj.id]);
     if (!local || local.submitted) {
       await db.runAsync(
-        `INSERT INTO reports(job_id,note,lat,lng,device_code,signature_svg,submitted) VALUES(?,?,?,?,?,?,1)
+        `INSERT INTO reports(job_id,note,recipient_full_name,lat,lng,location_accuracy,device_code,signature_svg,submitted,created_at,completed_at)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(job_id) DO UPDATE SET note=excluded.note, lat=excluded.lat, lng=excluded.lng,
-           device_code=excluded.device_code, signature_svg=excluded.signature_svg, submitted=1`,
-        [sj.id, sj.report.note, sj.report.lat, sj.report.lng, sj.report.deviceCode, sj.report.signatureSvg]);
+           recipient_full_name=excluded.recipient_full_name, location_accuracy=excluded.location_accuracy,
+           device_code=excluded.device_code,
+           signature_svg=excluded.signature_svg, submitted=1, created_at=excluded.created_at,
+           completed_at=excluded.completed_at`,
+        [sj.id, sj.report.note, sj.report.recipientFullName, sj.report.lat, sj.report.lng, sj.report.locationAccuracy,
+          sj.report.deviceCode, sj.report.signatureSvg, 1, sj.report.createdAt, sj.report.completedAt]);
     }
   }
 }

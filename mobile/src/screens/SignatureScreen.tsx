@@ -38,8 +38,11 @@ export default function SignatureScreen({ route, navigation }: Props) {
   }), []);
 
   const clear = () => { live.current = []; setStrokes([]); };
+  const hasMark = strokes.some((stroke) => stroke.length > 1 &&
+    stroke.some((point) => point.x !== stroke[0].x || point.y !== stroke[0].y));
 
   const save = async () => {
+    if (!hasMark) return;
     const d = strokes.map(toPath).join('');
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(size.w)}" height="${Math.round(size.h)}" viewBox="0 0 ${Math.round(size.w)} ${Math.round(size.h)}">` +
       `<path d="${d}" stroke="#000" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -61,7 +64,7 @@ export default function SignatureScreen({ route, navigation }: Props) {
       </View>
       <View style={s.row}>
         <View style={{ flex: 1 }}><Btn title={t.clear} kind="secondary" onPress={clear} /></View>
-        <View style={{ flex: 1 }}><Btn title={t.save} onPress={save} disabled={!strokes.length || !size.w} /></View>
+        <View style={{ flex: 1 }}><Btn title={t.save} onPress={save} disabled={!hasMark || !size.w} /></View>
       </View>
     </View>
   );

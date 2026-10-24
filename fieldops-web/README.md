@@ -1,14 +1,12 @@
 # FieldOps – aplikacja webowa
 
-React 19 + Vite 8 + React Router 7. Korzysta z backendu z katalogu `../backend` (kontrakt: `../docs/API.md`).
+Aktywnym entrypointem jest samodzielna aplikacja HTML/JavaScript w `index.html`, serwowana przez Vite i korzystająca z backendu `../backend`. Katalog `src/` zawiera oddzielne źródła React, które nie są obecnie ładowane przez entrypoint.
 
 ## Uruchomienie
 
 ```sh
-# 1. backend (Node >= 22.13, port 3000, seed: jan@fieldops.local / anna@fieldops.local, hasło fieldops123)
-cd backend && npm start
-
-# 2. web (w drugim terminalu)
+# Uruchom lokalny backend zgodnie z instrukcją w głównym README.
+# W drugim terminalu:
 cd fieldops-web
 npm ci
 npm run dev        # http://localhost:5173, żądania /api idą przez proxy na http://localhost:3000
@@ -16,9 +14,10 @@ npm run dev        # http://localhost:5173, żądania /api idą przez proxy na h
 
 Inny adres backendu: `VITE_API_PROXY=http://host:port npm run dev`.
 
-Kontrole jakości: `npm test`, `npm run lint`, `npm run build`.
+`npm run build` buduje aktywny plik `index.html`; `npm test` i `npm run lint` dotyczą oddzielnego źródła React w `src/`,
+które nie jest obecnie entrypointem.
 
-## Kontrakt API używany przez web
+## Uwagi do nieaktywnego źródła React
 
 | Operacja | Wywołanie |
 |---|---|
@@ -30,7 +29,7 @@ Kontrole jakości: `npm test`, `npm run lint`, `npm run build`.
 | szczegóły | `GET /api/jobs/:id` |
 | nowe zlecenie | `POST /api/jobs` (status początkowy `new` ustawia backend) |
 
-Pełny opis: `../docs/API.md`. Całą komunikację zawiera `src/services/api.js` (jedyny `fetch`), `auth.js` i `jobs.js`.
+Pełny opis API: `../docs/API.md`. Scenariusze testów aktywnego interfejsu: `../docs/TESTING.md`.
 
 ### Mapowanie modelu (granica aplikacji: `services/jobs.js`)
 
@@ -41,6 +40,14 @@ Pełny opis: `../docs/API.md`. Całą komunikację zawiera `src/services/api.js`
 | `dueDate` (pole `datetime-local`, wysyłane jako ISO) | `scheduledAt` |
 
 Statusy zgodne z backendem: `new` („Do wykonania”), `in_progress`, `done`.
+
+## Raport serwisowy
+
+Zlecenie w trakcie realizacji można zakończyć wyłącznie przez zapisanie raportu. Raport wymaga opisu wykonanych czynności,
+pełnego imienia i nazwiska osoby odbierającej oraz odręcznego podpisu. Zdjęcia JPEG, PNG i WebP są opcjonalne (maksymalnie
+10 plików po 10 MiB, łącznie do 40 MiB). Lokalizacja jest pobierana tylko po kliknięciu i zgodzie użytkownika. Raport i
+zmiana statusu na `done` są zapisywane atomowo; nie ma osobnej akcji zakończenia bez raportu. Zapisany raport można
+wyświetlić na liście zleceń, a zdjęcia są pobierane z prywatnego endpointu wymagającego sesji.
 
 ## Sesja i bezpieczeństwo
 

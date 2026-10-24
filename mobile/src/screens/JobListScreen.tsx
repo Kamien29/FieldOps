@@ -48,7 +48,10 @@ export default function JobListScreen({ navigation }: Props) {
           <Pressable style={s.card} onPress={() => navigation.navigate('JobDetail', { jobId: item.id })}>
             <View style={[s.row, { justifyContent: 'space-between', marginBottom: 6 }]}>
               <Text style={s.muted}>{item.id} · {fmtDate(item.scheduledAt)}</Text>
-              <Chip label={t.status[item.status]} color={statusColor[item.status]} />
+              <Chip
+                label={item.status === 'done' && item.hasReport ? 'Wykonane — raport zapisany' : t.status[item.status]}
+                color={statusColor[item.status]}
+              />
             </View>
             <Text style={[s.text, { fontWeight: '700' }]}>{item.title}</Text>
             <Text style={s.muted}>{item.customer}</Text>

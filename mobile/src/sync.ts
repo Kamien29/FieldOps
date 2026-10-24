@@ -89,6 +89,11 @@ async function sendOne(m: OutboxRow, job: Job) {
       await db.deleteOutbox(m.id);
       return;
     }
+    case 'photo_delete': {
+      await apiFetch(`/api/jobs/${job.id}/photos/${m.payload.photoId}`, { method: 'DELETE' });
+      await db.ackMutation(m.id, job.id, job.version);
+      return;
+    }
     case 'status': {
       const r = await apiFetch<{ job: ServerJob }>(`/api/jobs/${job.id}/status`, {
         method: 'POST', idempotencyKey: m.id, body: { status: m.payload.status, baseVersion: job.version } });

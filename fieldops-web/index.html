@@ -29,6 +29,32 @@ form.fields{display:grid;gap:12px}.two{display:grid;grid-template-columns:1fr 1f
 .profile-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
 .profile-actions button{min-width:160px}
 .profile-badge{display:inline-block;border-radius:999px;background:#e4edff;color:#155eef;padding:6px 12px;font-size:12px;font-weight:800;margin-bottom:12px}
+.report-dialog,.photo-dialog{width:min(920px,calc(100% - 24px));max-width:none;max-height:calc(100% - 24px);padding:0;border:0;border-radius:16px;background:#f4f7fb;color:#15202b;box-shadow:0 20px 70px #172b4d40}
+.report-dialog::backdrop,.photo-dialog::backdrop{background:#0f172acc}
+.report-panel{padding:22px;overflow:auto;max-height:calc(100vh - 24px)}
+.report-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:18px}
+.report-header h2{margin:0 0 5px;font-size:22px}
+.report-fields{display:grid;gap:14px}
+.report-fields textarea{resize:vertical}
+.signature-pad{display:grid;gap:8px}
+.signature-pad canvas{display:block;width:100%;height:180px;border:1px solid #d4dce7;border-radius:9px;background:#fff;touch-action:none}
+.report-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.report-photo{display:grid;gap:7px;min-width:0;padding:10px;border:1px solid #e5eaf1;border-radius:10px;background:#fff}
+.report-photo img,.report-view-photo{width:100%;aspect-ratio:1;object-fit:cover;border-radius:7px;background:#edf2f8}
+.report-photo span{font-size:12px;color:#536273;overflow-wrap:anywhere}
+.report-photo button{padding:7px 9px;font-size:12px}
+.report-view{display:grid;gap:16px}
+.report-view dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0}
+.report-view dl div{padding:12px;border:1px solid #e5eaf1;border-radius:10px;background:#fff;min-width:0}
+.report-view dt{color:#687789;font-size:12px;font-weight:700;margin-bottom:5px}
+.report-view dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.report-view-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.report-view-photos button{padding:4px;background:#fff;border:1px solid #e5eaf1}
+.report-view-signature{display:block;width:min(100%,600px);height:160px;object-fit:contain;background:#fff;border:1px solid #d4dce7;border-radius:9px}
+.photo-dialog{width:min(1200px,calc(100% - 24px));background:#111827}
+.photo-dialog img{display:block;max-width:100%;max-height:calc(100vh - 100px);margin:0 auto;object-fit:contain}
+.photo-dialog .report-header{padding:14px 16px 0;color:#fff}
+@media(max-width:600px){.report-panel{padding:16px}.report-view dl{grid-template-columns:1fr}.report-header{align-items:flex-start}}
 @media(max-width:800px){.profile-grid{grid-template-columns:1fr}}
 .auth-wrap{min-height:calc(100vh - 70px);display:grid;place-items:center;padding:24px}.auth-card{width:min(430px,100%);padding:28px}.auth-card h1{font-size:26px}.auth-card form{display:grid;gap:14px}.auth-switch{text-align:center;margin-top:16px;color:#64748b;font-size:14px}.link{color:#155eef;background:none;padding:0}
 footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
@@ -85,7 +111,42 @@ footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
   <div id="profileMessage" role="status" aria-live="polite"></div>
 </section>
 </main><footer>FieldOps · dane odseparowane per konto</footer>
-<script>
+  <dialog id="reportDialog" class="report-dialog" aria-labelledby="reportDialogTitle">
+    <div class="report-panel">
+      <div class="report-header">
+        <div><h2 id="reportDialogTitle">Raport serwisowy</h2><div class="muted" id="reportJobLabel"></div></div>
+        <button type="button" class="secondary" id="closeReport">Zamknij</button>
+      </div>
+      <form id="reportForm" class="report-fields">
+        <label>Opis wykonanych czynności<textarea name="note" rows="5" maxlength="10000" required placeholder="Opisz wykonane prace, wyniki i zalecenia."></textarea></label>
+        <label>Imię i nazwisko osoby odbierającej<input name="recipientFullName" maxlength="200" autocomplete="name" required placeholder="Imię i nazwisko"></label>
+        <fieldset class="report-fields" style="border:0;padding:0;margin:0">
+          <legend style="font-size:12px;color:#64748b;font-weight:700">Podpis osoby odbierającej <span aria-hidden="true">*</span></legend>
+          <div class="signature-pad"><canvas id="reportSignature" width="1000" height="220" aria-label="Pole do złożenia podpisu"></canvas>
+            <div class="toolbar"><button type="button" id="clearSignature" class="secondary">Wyczyść podpis</button><span class="muted" id="signatureStatus" aria-live="polite">Złóż podpis palcem lub myszą.</span></div>
+          </div>
+        </fieldset>
+        <fieldset class="report-fields" style="border:0;padding:0;margin:0">
+          <legend style="font-size:12px;color:#64748b;font-weight:700">Zdjęcia (opcjonalnie, JPEG / PNG / WebP; maks. 10 zdjęć po 10 MiB)</legend>
+          <input id="reportPhotosInput" type="file" accept="image/jpeg,image/png,image/webp" multiple>
+          <div id="reportPhotos" class="report-photos" aria-live="polite"></div>
+        </fieldset>
+        <section class="panel" style="padding:14px">
+          <h3 style="font-size:14px;margin:0 0 8px">Lokalizacja (opcjonalnie)</h3>
+          <p class="muted" style="margin:0 0 10px">Lokalizacja zostanie pobrana tylko po kliknięciu i za Twoją zgodą.</p>
+          <div class="toolbar"><button type="button" id="captureLocation" class="secondary">Pobierz lokalizację</button><button type="button" id="clearLocation" class="secondary hidden">Usuń lokalizację</button><span id="reportLocationStatus" class="muted" aria-live="polite">Nie dodano lokalizacji.</span></div>
+        </section>
+        <div id="reportMessage" role="status" aria-live="polite"></div>
+        <div class="toolbar"><button type="submit" id="submitReport">Zapisz raport i zakończ zlecenie</button></div>
+      </form>
+      <section id="reportView" class="report-view hidden" aria-live="polite"></section>
+    </div>
+  </dialog>
+  <dialog id="photoDialog" class="photo-dialog" aria-label="Podgląd zdjęcia">
+    <div class="report-header"><span>Zdjęcie z raportu</span><button type="button" id="closePhoto" class="secondary">Zamknij</button></div>
+    <img id="photoDialogImage" alt="Powiększone zdjęcie z raportu">
+  </dialog>
+  <script>
 'use strict';
 // FieldOps panel (legacy appearance) backed by the PostgreSQL API.
 // Authentication uses the secure, HttpOnly session cookie: no tokens in localStorage.
@@ -105,6 +166,30 @@ const apiErrors = {
   csrf_blocked:'Odśwież stronę i spróbuj ponownie.',
   conflict:'Zlecenie zostało zmienione na innym urządzeniu. Odśwież listę i spróbuj ponownie.',
   invalid_current_password:'Nieprawidłowe obecne hasło.',
+  invalid_note:'Opis wykonanych czynności jest wymagany.',
+  invalid_recipientFullName:'Podaj imię i nazwisko osoby odbierającej.',
+  invalid_signature:'Podpis jest wymagany. Złóż podpis ponownie.',
+  invalid_location:'Dane lokalizacji są niekompletne.',
+  invalid_lat:'Nieprawidłowa szerokość geograficzna.',
+  invalid_lng:'Nieprawidłowa długość geograficzna.',
+  invalid_locationAccuracy:'Nieprawidłowa dokładność lokalizacji.',
+  invalid_deviceCode:'Nieprawidłowy identyfikator urządzenia w raporcie.',
+  invalid_photoIds:'Lista zdjęć raportu jest nieprawidłowa.',
+  invalid_mime:'Dozwolone są zdjęcia JPEG, PNG lub WebP.',
+  invalid_file_type:'Zawartość pliku nie odpowiada deklarowanemu formatowi.',
+  invalid_data:'Nie można odczytać pliku zdjęcia.',
+  invalid_photo_id:'Nieprawidłowy identyfikator zdjęcia.',
+  payload_too_large:'Zdjęcie przekracza limit 10 MiB.',
+  too_many_photos:'Osiągnięto limit 10 zdjęć dla zlecenia.',
+  photo_total_too_large:'Łączny rozmiar zdjęć przekracza limit 40 MiB.',
+  invalid_report:'Dane raportu są nieprawidłowe.',
+  job_not_in_progress:'Raport można zapisać wyłącznie dla zlecenia w trakcie realizacji.',
+  report_already_exists:'To zlecenie ma już zapisany raport.',
+  report_required:'Zlecenie można oznaczyć jako wykonane dopiero po zapisaniu raportu.',
+  photo_id_taken:'Identyfikator zdjęcia jest już przypisany do innego pliku.',
+  unknown_photo:'Nie udało się potwierdzić jednego ze zdjęć. Spróbuj wysłać je ponownie.',
+  photo_delete_not_allowed:'Nie można usunąć zdjęcia z zamkniętego zlecenia.',
+  photo_not_found:'Nie znaleziono zdjęcia.',
   internal_error:'Błąd serwera. Sprawdź konfigurację backendu w Vercel.'
 };
 let user = null;
@@ -237,15 +322,20 @@ function renderJobs() {
     const d = deviceById(j.deviceId);
     const statusAction = j.status === 'new'
       ? `<button data-job-action="status" data-id="${esc(j.id)}" data-status="in_progress">Rozpocznij</button>`
-      : (j.status === 'in_progress' ? `<button data-job-action="status" data-id="${esc(j.id)}" data-status="done">Zakończ</button>` : '');
+      : '';
+    const reportAction = j.report
+      ? `<button class="secondary" data-job-action="view-report" data-id="${esc(j.id)}">Podgląd raportu</button>`
+      : (j.status === 'in_progress' ? `<button data-job-action="report" data-id="${esc(j.id)}">Zakończ z raportem</button>` : '');
+    const statusLabel = j.status === 'done' && j.report ? 'Wykonane — raport zapisany' : (statusLabels[j.status] || j.status);
     return `<article class="job"><div><h3>${esc(j.title)}</h3>
       <div class="muted">${esc(j.customer)} · ${esc(j.address)}<br>Termin: <b>${esc(formatDate(j.scheduledAt))}</b>
       ${d ? `<br>Urządzenie: ${esc(d.name)} (${esc(d.serial)})` : ''}
       <br>${esc(j.description || 'Brak opisu')}</div>
-      <p><span class="badge ${esc(statusClass(j.status))}">${esc(statusLabels[j.status] || j.status)}</span></p></div>
+      <p><span class="badge ${esc(statusClass(j.status))}">${esc(statusLabel)}</span></p></div>
       <div class="job-actions">
         <button class="secondary" data-job-action="edit" data-id="${esc(j.id)}">Edytuj</button>
         ${statusAction}
+        ${reportAction}
         ${j.status !== 'cancelled' ? `<button class="secondary" data-job-action="status" data-id="${esc(j.id)}" data-status="cancelled">Anuluj</button>` : ''}
         <button class="danger" data-job-action="delete" data-id="${esc(j.id)}">Usuń</button>
       </div></article>`;
@@ -284,6 +374,468 @@ async function updateStatus(id, status) {
   await loadJobs();
   showNotice('Status zlecenia został zmieniony.');
 }
+let reportJob = null;
+let reportPhotos = [];
+let reportLocation = null;
+let reportSignatureStrokes = [];
+let activeSignatureStroke = null;
+let reportIdempotencyKey = null;
+let reportBusy = false;
+let reportSubmitAttempted = false;
+let reportPreparingPhotos = false;
+let reportLocationPending = false;
+
+function reportMessage(text, isError = false) {
+  $('#reportMessage').innerHTML = text ? `<div class="message ${isError ? 'error' : ''}">${esc(text)}</div>` : '';
+}
+function refreshReportIdempotencyKey() {
+  if (reportSubmitAttempted && !reportBusy) reportIdempotencyKey = crypto.randomUUID();
+}
+function drawSignature() {
+  const canvas = $('#reportSignature');
+  const context = canvas.getContext('2d');
+  context.clearRect(0,0,canvas.width,canvas.height);
+  context.strokeStyle = '#15202b';
+  context.lineWidth = 4;
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  for (const stroke of [...reportSignatureStrokes,...(activeSignatureStroke ? [activeSignatureStroke] : [])]) {
+    if (!stroke.length) continue;
+    context.beginPath();
+    context.moveTo(stroke[0].x,stroke[0].y);
+    for (const point of stroke.slice(1)) context.lineTo(point.x,point.y);
+    context.stroke();
+  }
+}
+function signaturePoint(event) {
+  const canvas = $('#reportSignature');
+  const bounds = canvas.getBoundingClientRect();
+  return {
+    x:Math.max(0,Math.min(canvas.width,(event.clientX-bounds.left)*canvas.width/bounds.width)),
+    y:Math.max(0,Math.min(canvas.height,(event.clientY-bounds.top)*canvas.height/bounds.height))
+  };
+}
+function finishSignatureStroke() {
+  if (!activeSignatureStroke) return;
+  const stroke = activeSignatureStroke;
+  activeSignatureStroke = null;
+  const first = stroke[0];
+  const last = stroke[stroke.length-1];
+  if (stroke.length > 1 && Math.hypot(last.x-first.x,last.y-first.y) > 3) {
+    reportSignatureStrokes.push(stroke);
+    refreshReportIdempotencyKey();
+    $('#signatureStatus').textContent = 'Podpis został złożony.';
+  }
+  drawSignature();
+}
+function signatureSvg() {
+  const path = reportSignatureStrokes.map(stroke => {
+    const point = value => `${value.x.toFixed(2)} ${value.y.toFixed(2)}`;
+    return `M${point(stroke[0])}${stroke.slice(1).map(value => `L${point(value)}`).join('')}`;
+  }).join('');
+  return path ? `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="220" viewBox="0 0 1000 220"><path d="${path}" stroke="#000" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>` : '';
+}
+function releaseReportPhotoPreviews() {
+  for (const photo of reportPhotos) URL.revokeObjectURL(photo.previewUrl);
+  reportPhotos = [];
+  $('#reportPhotos').replaceChildren();
+}
+function updateReportControlAvailability() {
+  const blocked = reportBusy || reportPreparingPhotos || reportPhotos.some(photo => photo.uploading);
+  $('#submitReport').disabled = blocked;
+  $('#closeReport').disabled = blocked;
+}
+function resetReportState() {
+  releaseReportPhotoPreviews();
+  reportJob = null;
+  reportLocation = null;
+  reportSignatureStrokes = [];
+  activeSignatureStroke = null;
+  reportIdempotencyKey = null;
+  reportBusy = false;
+  reportSubmitAttempted = false;
+  reportPreparingPhotos = false;
+  reportLocationPending = false;
+  $('#reportForm').reset();
+  $('#reportForm').classList.remove('hidden');
+  $('#reportView').classList.add('hidden');
+  $('#reportView').replaceChildren();
+  $('#reportDialogTitle').textContent = 'Raport serwisowy';
+  $('#reportJobLabel').textContent = '';
+  $('#signatureStatus').textContent = 'Złóż podpis palcem lub myszą.';
+  $('#reportLocationStatus').textContent = 'Nie dodano lokalizacji.';
+  $('#clearLocation').classList.add('hidden');
+  $('#clearLocation').disabled = false;
+  $('#captureLocation').disabled = false;
+  $('#submitReport').disabled = false;
+  $('#closeReport').disabled = false;
+  reportMessage('');
+  drawSignature();
+}
+async function openReportEditor(id) {
+  resetReportState();
+  const {job} = await api('/api/jobs/' + encodeURIComponent(id));
+  if (job.status !== 'in_progress' || job.report) {
+    await loadJobs();
+    if (job.report) return openReportViewFromJob(job);
+    throw new Error('Zlecenie nie jest już w trakcie realizacji. Odśwież listę.');
+  }
+  reportJob = job;
+  reportIdempotencyKey = crypto.randomUUID();
+  $('#reportJobLabel').textContent = `${job.title} · ${job.customer} · ${job.id}`;
+  $('#reportDialog').showModal();
+}
+function readableDate(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('pl-PL');
+}
+function reportPhotoUrl(id) {
+  return '/api/photos/' + encodeURIComponent(id);
+}
+function renderReportView(job) {
+  const report = job.report;
+  if (!report) throw new Error('Zlecenie nie ma zapisanego raportu.');
+  reportJob = job;
+  $('#reportForm').classList.add('hidden');
+  $('#reportDialogTitle').textContent = 'Raport serwisowy';
+  $('#reportJobLabel').textContent = `${job.title} · ${job.customer} · ${job.id}`;
+  const location = report.lat === null || report.lat === undefined
+    ? 'Nie podano'
+    : `${report.lat}, ${report.lng}${report.locationAccuracy == null ? '' : ` (dokładność ±${report.locationAccuracy} m)`}`;
+  const photos = Array.isArray(report.photoIds) ? report.photoIds : [];
+  $('#reportView').innerHTML = `
+    <dl>
+      <div><dt>Data zakończenia</dt><dd>${esc(readableDate(report.completedAt || report.createdAt))}</dd></div>
+      <div><dt>Osoba odbierająca</dt><dd>${esc(report.recipientFullName)}</dd></div>
+      <div><dt>Lokalizacja</dt><dd>${esc(location)}</dd></div>
+      ${report.deviceCode ? `<div><dt>Identyfikator urządzenia</dt><dd>${esc(report.deviceCode)}</dd></div>` : ''}
+      <div style="grid-column:1/-1"><dt>Wykonane czynności</dt><dd>${esc(report.note)}</dd></div>
+    </dl>
+    <section><h3 style="font-size:14px">Podpis osoby odbierającej</h3>
+      <img class="report-view-signature" alt="Podpis osoby odbierającej" src="data:image/svg+xml,${encodeURIComponent(report.signatureSvg)}">
+    </section>
+    ${photos.length ? `<section><h3 style="font-size:14px">Zdjęcia (${photos.length})</h3><div class="report-view-photos">${photos.map(id => {
+      const src = reportPhotoUrl(id);
+      return `<button type="button" data-photo-src="${esc(src)}" aria-label="Powiększ zdjęcie"><img class="report-view-photo" src="${esc(src)}" alt="Zdjęcie raportu" loading="lazy"></button>`;
+    }).join('')}</div></section>` : ''}
+  `;
+  $('#reportView').classList.remove('hidden');
+  releaseReportPhotoPreviews();
+}
+function openReportViewFromJob(job) {
+  resetReportState();
+  renderReportView(job);
+  $('#reportDialog').showModal();
+}
+async function openReportView(id) {
+  const {job} = await api('/api/jobs/' + encodeURIComponent(id));
+  openReportViewFromJob(job);
+}
+function renderReportPhotos() {
+  const photosBusy = reportBusy || reportPreparingPhotos || reportPhotos.some(photo => photo.uploading);
+  $('#reportPhotos').innerHTML = reportPhotos.map((photo,index) => `
+    <div class="report-photo">
+      <img src="${esc(photo.previewUrl)}" alt="${esc(photo.file.name)}">
+      <span>${esc(photo.file.name)} · ${photo.uploading ? 'Wysyłanie…' : photo.uploaded ? 'Wysłano' : 'Oczekuje na wysłanie'}</span>
+      <button type="button" class="secondary" data-report-photo-remove="${index}" ${photosBusy ? 'disabled' : ''}>Usuń zdjęcie</button>
+    </div>
+  `).join('');
+  updateReportControlAvailability();
+}
+function hasPhotoSignature(bytes, mime) {
+  if (mime === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mime === 'image/png') return bytes.length >= 8 &&
+    [0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a].every((byte,index) => bytes[index] === byte);
+  return mime === 'image/webp' && bytes.length >= 12 &&
+    String.fromCharCode(...bytes.subarray(0,4)) === 'RIFF' &&
+    String.fromCharCode(...bytes.subarray(8,12)) === 'WEBP';
+}
+async function addReportPhotos(files) {
+  if (reportBusy) return;
+  reportPreparingPhotos = true;
+  $('#reportPhotosInput').disabled = true;
+  renderReportPhotos();
+  reportMessage('');
+  try {
+    for (const file of files) {
+      if (reportPhotos.length >= 10) {
+        reportMessage('Możesz dołączyć maksymalnie 10 zdjęć.',true);
+        break;
+      }
+      if (!['image/jpeg','image/png','image/webp'].includes(file.type)) {
+        reportMessage(`Niedozwolony format zdjęcia: ${file.name}.`,true);
+        continue;
+      }
+      if (!file.size || file.size > 10 * 1024 * 1024) {
+        reportMessage(`Zdjęcie ${file.name} przekracza limit 10 MiB lub jest puste.`,true);
+        continue;
+      }
+      if (reportPhotos.reduce((sum,photo) => sum+photo.file.size,0)+file.size > 40 * 1024 * 1024) {
+        reportMessage('Łączny rozmiar zdjęć przekracza limit 40 MiB.',true);
+        continue;
+      }
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (!hasPhotoSignature(bytes,file.type)) {
+        reportMessage(`Zawartość pliku ${file.name} nie odpowiada formatowi zdjęcia.`,true);
+        continue;
+      }
+      reportPhotos.push({
+        file,
+        id:crypto.randomUUID(),
+        previewUrl:URL.createObjectURL(file),
+        uploaded:false,
+        uploading:false
+      });
+      refreshReportIdempotencyKey();
+    }
+  } finally {
+    reportPreparingPhotos = false;
+    $('#reportPhotosInput').disabled = false;
+    $('#submitReport').disabled = false;
+    renderReportPhotos();
+  }
+}
+async function removeReportPhoto(index) {
+  const photo = reportPhotos[index];
+  if (!photo || reportBusy || photo.uploading) return;
+  photo.uploading = true;
+  renderReportPhotos();
+  if (photo.uploaded) {
+    try {
+      await api(`/api/jobs/${encodeURIComponent(reportJob.id)}/photos/${encodeURIComponent(photo.id)}`,{method:'DELETE'});
+    } catch (error) {
+      photo.uploading = false;
+      renderReportPhotos();
+      reportMessage(error.message,true);
+      return;
+    }
+  }
+  URL.revokeObjectURL(photo.previewUrl);
+  reportPhotos.splice(index,1);
+  refreshReportIdempotencyKey();
+  renderReportPhotos();
+}
+function fileBase64(file) {
+  return file.arrayBuffer().then(buffer => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let start=0; start<bytes.length; start+=0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(start,start+0x8000));
+    }
+    return btoa(binary);
+  });
+}
+async function uploadReportPhotos() {
+  for (const photo of reportPhotos) {
+    if (photo.uploaded) continue;
+    photo.uploading = true;
+    renderReportPhotos();
+    try {
+      await api(`/api/jobs/${encodeURIComponent(reportJob.id)}/photos`, {
+        method:'POST',
+        body:{id:photo.id,mime:photo.file.type,dataBase64:await fileBase64(photo.file)}
+      });
+      photo.uploaded = true;
+    } finally {
+      photo.uploading = false;
+      renderReportPhotos();
+    }
+  }
+}
+$('#reportPhotosInput').addEventListener('change',event => {
+  const files = Array.from(event.currentTarget.files || []);
+  event.currentTarget.value = '';
+  addReportPhotos(files).catch(error => reportMessage(error.message,true));
+});
+$('#reportPhotos').addEventListener('click',event => {
+  const button = event.target.closest('[data-report-photo-remove]');
+  if (button) removeReportPhoto(Number(button.dataset.reportPhotoRemove));
+});
+const signatureCanvas = $('#reportSignature');
+signatureCanvas.addEventListener('pointerdown',event => {
+  if (reportBusy) return;
+  event.preventDefault();
+  signatureCanvas.setPointerCapture(event.pointerId);
+  activeSignatureStroke = [signaturePoint(event)];
+  drawSignature();
+});
+signatureCanvas.addEventListener('pointermove',event => {
+  if (!activeSignatureStroke) return;
+  activeSignatureStroke.push(signaturePoint(event));
+  drawSignature();
+});
+signatureCanvas.addEventListener('pointerup',finishSignatureStroke);
+signatureCanvas.addEventListener('pointercancel',finishSignatureStroke);
+$('#clearSignature').addEventListener('click',() => {
+  if (reportBusy) return;
+  reportSignatureStrokes = [];
+  activeSignatureStroke = null;
+  refreshReportIdempotencyKey();
+  drawSignature();
+  $('#signatureStatus').textContent = 'Podpis wyczyszczono.';
+});
+$('#captureLocation').addEventListener('click',() => {
+  reportMessage('');
+  if (!navigator.geolocation) {
+    $('#reportLocationStatus').textContent = 'Ta przeglądarka nie udostępnia geolokalizacji.';
+    return;
+  }
+  const button = $('#captureLocation');
+  button.disabled = true;
+  reportLocationPending = true;
+  $('#reportLocationStatus').textContent = 'Pobieranie lokalizacji…';
+  navigator.geolocation.getCurrentPosition(position => {
+    if (!reportJob) return;
+    reportLocationPending = false;
+    reportLocation = {
+      lat:position.coords.latitude,
+      lng:position.coords.longitude,
+      locationAccuracy:Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null
+    };
+    refreshReportIdempotencyKey();
+    $('#reportLocationStatus').textContent = `Dodano lokalizację: ${reportLocation.lat.toFixed(5)}, ${reportLocation.lng.toFixed(5)}.`;
+    $('#clearLocation').classList.remove('hidden');
+    $('#clearLocation').disabled = false;
+    button.disabled = false;
+  },error => {
+    if (!reportJob) return;
+    reportLocationPending = false;
+    reportLocation = null;
+    refreshReportIdempotencyKey();
+    $('#clearLocation').classList.add('hidden');
+    $('#clearLocation').disabled = true;
+    const reason = error.code === 1 ? 'Brak zgody na lokalizację.' :
+      error.code === 2 ? 'Nie udało się ustalić lokalizacji.' : 'Przekroczono czas pobierania lokalizacji.';
+    $('#reportLocationStatus').textContent = `${reason} Możesz zapisać raport bez lokalizacji.`;
+    button.disabled = false;
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:0});
+});
+$('#clearLocation').addEventListener('click',() => {
+  reportLocation = null;
+  refreshReportIdempotencyKey();
+  $('#reportLocationStatus').textContent = 'Nie dodano lokalizacji.';
+  $('#clearLocation').classList.add('hidden');
+});
+$('#reportForm').addEventListener('input',() => {
+  refreshReportIdempotencyKey();
+});
+$('#reportForm').addEventListener('submit',async event => {
+  event.preventDefault();
+  if (!reportJob || reportBusy || reportPreparingPhotos || reportPhotos.some(photo => photo.uploading)) return;
+  if (reportLocationPending) {
+    reportMessage('Poczekaj na wynik pobierania lokalizacji. Możesz zapisać raport bez niej po zakończeniu tej próby.',true);
+    return;
+  }
+  const form = event.currentTarget;
+  if (!form.reportValidity()) return;
+  const recipientFullName = form.elements.recipientFullName.value.trim();
+  if (recipientFullName.split(/\s+/).length < 2) {
+    reportMessage('Podaj imię i nazwisko osoby odbierającej.',true);
+    form.elements.recipientFullName.focus();
+    return;
+  }
+  const signature = signatureSvg();
+  if (!signature) {
+    reportMessage('Złóż podpis osoby odbierającej przed zapisaniem raportu.',true);
+    $('#signatureStatus').textContent = 'Podpis jest wymagany.';
+    return;
+  }
+  reportBusy = true;
+  reportSubmitAttempted = true;
+  reportIdempotencyKey ||= crypto.randomUUID();
+  const button = $('#submitReport');
+  for (const control of $('#reportForm').querySelectorAll('input,textarea,button')) control.disabled = true;
+  $('#reportPhotosInput').disabled = true;
+  $('#captureLocation').disabled = true;
+  $('#clearLocation').disabled = true;
+  renderReportPhotos();
+  button.textContent = 'Zapisywanie raportu…';
+  reportMessage('');
+  try {
+    await uploadReportPhotos();
+    const body = {
+      note:form.elements.note.value.trim(),
+      recipientFullName,
+      signatureSvg:signature,
+      lat:reportLocation?.lat ?? null,
+      lng:reportLocation?.lng ?? null,
+      locationAccuracy:reportLocation?.locationAccuracy ?? null,
+      deviceCode:reportJob.deviceId ? deviceById(reportJob.deviceId)?.serial ?? null : null,
+      photoIds:reportPhotos.map(photo => photo.id),
+      baseVersion:reportJob.version
+    };
+    const reply = await api(`/api/jobs/${encodeURIComponent(reportJob.id)}/report`,{
+      method:'PUT',
+      body,
+      headers:{'Idempotency-Key':reportIdempotencyKey}
+    });
+    if (!reply?.job?.report || reply.job.status !== 'done') {
+      throw new Error('Serwer nie potwierdził zapisania raportu. Odśwież zlecenia przed ponowną próbą.');
+    }
+    const savedJob = reply.job;
+    renderReportView(savedJob);
+    $('#submitReport').textContent = 'Zapisano';
+    loadJobs().catch(error => showNotice(`Raport zapisano, ale nie udało się odświeżyć listy: ${error.message}`,true));
+  } catch (error) {
+    if (error.code === 'report_already_exists') {
+      try {
+        const {job} = await api('/api/jobs/' + encodeURIComponent(reportJob.id));
+        if (job.report) {
+          renderReportView(job);
+          loadJobs().catch(refreshError => showNotice(`Raport istnieje, ale nie udało się odświeżyć listy: ${refreshError.message}`,true));
+          return;
+        }
+      } catch (refreshError) {
+        reportMessage(refreshError.message,true);
+        return;
+      }
+    }
+    if (error.code === 'conflict') {
+      try {
+        const {job} = await api('/api/jobs/' + encodeURIComponent(reportJob.id));
+        if (job.report) {
+          renderReportView(job);
+          loadJobs().catch(refreshError => showNotice(`Raport istnieje, ale nie udało się odświeżyć listy: ${refreshError.message}`,true));
+          return;
+        }
+        if (job.status === 'in_progress') {
+          reportJob = job;
+          reportIdempotencyKey = crypto.randomUUID();
+          reportMessage('Zlecenie zmieniło się podczas pracy. Odświeżono jego wersję; sprawdź listę i ponów zapis raportu.',true);
+        } else {
+          reportMessage('Zlecenie nie jest już w trakcie realizacji. Raportu nie można zapisać.',true);
+        }
+        await loadJobs();
+      } catch (refreshError) {
+        reportMessage(`Nie udało się odświeżyć zlecenia po konflikcie: ${refreshError.message}`,true);
+      }
+      return;
+    }
+    reportMessage(error.message,true);
+  } finally {
+    reportBusy = false;
+    for (const control of $('#reportForm').querySelectorAll('input,textarea,button')) control.disabled = false;
+    $('#reportPhotosInput').disabled = false;
+    $('#captureLocation').disabled = false;
+    $('#clearLocation').disabled = !reportLocation;
+    button.textContent = 'Zapisz raport i zakończ zlecenie';
+    renderReportPhotos();
+  }
+});
+$('#closeReport').addEventListener('click',() => $('#reportDialog').close());
+$('#reportDialog').addEventListener('cancel',event => {
+  if (reportBusy || reportPreparingPhotos || reportPhotos.some(photo => photo.uploading)) event.preventDefault();
+});
+$('#reportDialog').addEventListener('close',resetReportState);
+$('#reportView').addEventListener('click',event => {
+  const button = event.target.closest('[data-photo-src]');
+  if (!button) return;
+  $('#photoDialogImage').src = button.dataset.photoSrc;
+  $('#photoDialog').showModal();
+});
+$('#closePhoto').addEventListener('click',() => $('#photoDialog').close());
+$('#photoDialog').addEventListener('close',() => { $('#photoDialogImage').removeAttribute('src'); });
 async function deleteJob(id) {
   if (!confirm('Czy na pewno chcesz usunąć zlecenie? Ta operacja jest nieodwracalna.')) return;
   await api('/api/jobs/' + encodeURIComponent(id),{method:'DELETE'});
@@ -297,6 +849,8 @@ $('#jobsList').addEventListener('click', async event => {
   try {
     if (button.dataset.jobAction === 'edit') await editJob(button.dataset.id);
     if (button.dataset.jobAction === 'status') await updateStatus(button.dataset.id,button.dataset.status);
+    if (button.dataset.jobAction === 'report') await openReportEditor(button.dataset.id);
+    if (button.dataset.jobAction === 'view-report') await openReportView(button.dataset.id);
     if (button.dataset.jobAction === 'delete') await deleteJob(button.dataset.id);
   } catch (err) {
     showNotice(err.message,true);

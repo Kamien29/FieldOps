@@ -25,12 +25,12 @@
 | Table | Purpose |
 |---|---|
 | `jobs` | Server fields + `version` + `sync_state` + `sync_error` + `conflict_json` |
-| `reports` | One draft/submitted report per job (`submitted` locks it) |
+| `reports` | One draft/submitted report per job; includes recipient name and local completion timestamp |
 | `photos` | Local file *name* (not path), `uploaded` flag |
 | `outbox` | Pending mutations (`seq`, `id`, `job_id`, `kind`, `payload`) |
 | `meta` | `last_sync` (server time of last pull) |
 
-`sync_state`: `synced` (nothing pending) · `pending` (outbox has report/status rows) · `conflict` (server rejected with 409) ·
+`sync_state`: `synced` (nothing pending) · `pending` (outbox has pending mutations) · `conflict` (server rejected with 409) ·
 `error` (permanent 4xx or missing local file).
 
 ## Sync algorithm (`src/sync.ts`)
@@ -51,7 +51,9 @@ pull():
 ```
 
 Photos are queued the moment they are taken, so they upload *before* the report (lower `seq`); the server rejects a
-report that references an unknown photo (`422`), which guarantees reports never point to missing images.
+report that references an unknown photo (`422`), which guarantees reports never point to missing images. The report
+mutation contains the recipient's full name and drawn signature; it atomically stores the report and marks the server
+job complete. No separate `done` status mutation is queued.
 
 **Triggers:** app start · connectivity regained (NetInfo) · app returns to foreground · every 60 s while online ·
 after each local submit/start/photo · pull-to-refresh.
@@ -70,7 +72,7 @@ Error state: **Retry** or **Discard my changes** (clears the outbox for that job
 
 - Camera (QR + photos) and location are requested at the moment of use, with a clear Polish rationale and a fallback message
   when denied. QR scanning accepts only the first code (camera emits repeatedly).
-- Note is autosaved (debounced 600 ms and on leaving the screen). Signature is stored as an **SVG string** (no image
+- Note and recipient name are autosaved (debounced 600 ms and on leaving the screen). Signature is stored as an **SVG string** (no image
   rendering dependency, a few KB) and rendered with `react-native-svg`.
 - Photos are resized to 1600 px / JPEG 60 % before storing to save mobile data and storage.
 - Location uses balanced accuracy with a 20 s timeout and falls back to the last known position.

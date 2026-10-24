@@ -36,11 +36,15 @@ CREATE INDEX IF NOT EXISTS idx_jobs_device ON jobs(device_id);
 CREATE TABLE IF NOT EXISTS reports (
   job_id TEXT PRIMARY KEY REFERENCES jobs(id),
   note TEXT NOT NULL DEFAULT '',
+  recipient_full_name TEXT NOT NULL DEFAULT '',
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
+  location_accuracy DOUBLE PRECISION,
   device_code TEXT,
   signature_svg TEXT,
   photo_ids TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+  completed_at TEXT,
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS photos (
