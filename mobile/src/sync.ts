@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { ApiError, NetworkError, apiFetch } from './api';
 import * as db from './db';
 import { emitDataChange } from './events';
