@@ -1,10 +1,4 @@
-**/node_modules/
-**/.expo/
-**/dist/
-**/.env
-**/.env.*
-!**/.env.example
-**/*.sqlite
-.vercel/
+node_modules/
 data/
+.env
 .DS_Store

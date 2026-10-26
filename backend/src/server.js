@@ -6,9 +6,9 @@ import {
   decodePhotoUpload, MAX_PHOTO_BYTES_PER_JOB, MAX_PHOTOS_PER_JOB,
 } from './report-validation.js';
 import { createReport } from './report-service.js';
+import { handleTeamRoute } from './team-api.js';
 
-// Must remain below Vercel's 4.5 MB request limit. Each image is Base64 JSON.
-const MAX_BODY = 4 * 1024 * 1024;
+const MAX_BODY = 15 * 1024 * 1024;
 const STATUSES = ['new', 'in_progress', 'done', 'cancelled'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SESSION_COOKIE = 'fieldops_session';
@@ -127,7 +127,7 @@ async function route(req, res) {
     const user = await one('SELECT * FROM users WHERE email=$1', [email.trim().toLowerCase()]);
     if (!user || !verifyPassword(password, user.password_hash)) throw error(401, 'invalid_credentials');
     const token = signToken(user.id);
-    return send(res, 200, { token, user: { id: user.id, name: user.name, email: user.email } }, { 'Set-Cookie': sessionCookie(req, token) });
+    return send(res, 200, { token, user: { id: user.id, name: user.name, email: user.email, hasAvatar: !!user.avatar_data } }, { 'Set-Cookie': sessionCookie(req, token) });
   }
   if (m === 'POST' && p === '/api/register') {
     const body = await readJson(req);
@@ -136,8 +136,8 @@ async function route(req, res) {
     if (!EMAIL_RE.test(email) || email.length > 254) throw error(400, 'invalid_email');
     if (typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 200) throw error(400, 'invalid_password');
     const id = `u-${randomUUID()}`;
-    // Validate TOKEN_SECRET *before* writing the user: configuration failure must
-    // never leave a half-created account that the visitor cannot sign into.
+    // Validate TOKEN_SECRET BEFORE creating the account: no partial registration
+    // if the Vercel backend lacks its signing configuration.
     const token = signToken(id);
     try {
       await query('INSERT INTO users(id, email, name, password_hash) VALUES($1,$2,$3,$4)', [id, email, name, hashPassword(body.password)]);
@@ -145,7 +145,7 @@ async function route(req, res) {
       if (err.code === '23505') throw error(409, 'email_taken');
       throw err;
     }
-    return send(res, 201, { token, user: { id, name, email } }, { 'Set-Cookie': sessionCookie(req, token) });
+    return send(res, 201, { token, user: { id, name, email, hasAvatar: false } }, { 'Set-Cookie': sessionCookie(req, token) });
   }
   if (m === 'POST' && p === '/api/logout') {
     return send(res, 200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) });
@@ -157,9 +157,12 @@ async function route(req, res) {
   if (!userId || !await one('SELECT 1 FROM users WHERE id=$1', [userId])) throw error(401, 'unauthorized');
   if (cookieToken && m !== 'GET' && m !== 'HEAD' && req.headers['x-requested-with'] !== 'fieldops-web') throw error(403, 'csrf_blocked');
 
+  if (await handleTeamRoute({req,res,p,m,userId,readJson,send,fail:error,now})) return;
+
   if (m === 'GET' && p === '/api/me') {
-    const user = await one('SELECT id,name,email FROM users WHERE id=$1', [userId]);
-    return send(res, 200, { user });
+    const user = await one('SELECT id,name,email,(avatar_data IS NOT NULL) AS has_avatar FROM users WHERE id=$1', [userId]);
+    const {has_avatar, ...publicUser} = user;
+    return send(res, 200, { user: {...publicUser, hasAvatar: has_avatar} });
   }
   if (m === 'PATCH' && p === '/api/me') {
     const body = await readJson(req);
@@ -172,7 +175,7 @@ async function route(req, res) {
       throw error(400, 'invalid_password');
     }
     const updatedUser = await transaction(async (client) => {
-      const current = await one('SELECT id,name,email,password_hash FROM users WHERE id=$1 FOR UPDATE', [userId], client);
+      const current = await one('SELECT id,name,email,password_hash,(avatar_data IS NOT NULL) AS has_avatar FROM users WHERE id=$1 FOR UPDATE', [userId], client);
       if (!current) throw error(401, 'unauthorized');
       const emailChanged = email !== current.email;
       // Re-authenticate sensitive account changes, not only new password changes.
@@ -189,7 +192,7 @@ async function route(req, res) {
         if (e.code === '23505') throw error(409, 'email_taken');
         throw e;
       }
-      return {id:userId,name,email};
+      return {id:userId,name,email,hasAvatar:current.has_avatar};
     });
     return send(res, 200, {user:updatedUser});
   }
@@ -275,16 +278,40 @@ async function route(req, res) {
     const customer = required(body.customer, 200, 'customer');
     const address = required(body.address, 300, 'address');
     const date = typeof body.scheduledAt === 'string' ? new Date(body.scheduledAt) : null;
-    if (!date || !Number.isFinite(date.getTime()) || date.getUTCFullYear() < 2000 || date.getUTCFullYear() > 2100) throw error(400, 'invalid_scheduledAt');
+    if (!date || !Number.isFinite(date.getTime()) || date.getUTCFullYear() < 2000 || date.getUTCFullYear() > 2100) {
+      throw error(400, 'invalid_scheduledAt');
+    }
     const deviceId = body.deviceId ?? null;
     if (deviceId !== null && (typeof deviceId !== 'string' ||
         !await one('SELECT 1 FROM devices WHERE id=$1 AND user_id=$2', [deviceId, userId]))) {
       throw error(400, 'invalid_device');
     }
-    const id = `J-${randomBytes(6).toString('hex').toUpperCase()}`; const t = now();
-    await query(`INSERT INTO jobs(id,assigned_to,title,customer,address,scheduled_at,description,status,created_at,updated_at,device_id)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [id,userId,title,customer,address,date.toISOString(),description,'new',t,t,deviceId]);
-    return send(res, 201, { job: await jobJson(await one('SELECT * FROM jobs WHERE id=$1', [id])) });
+    // Mobile creates an ID while offline. Keep that ID, so queued status/photo/report
+    // operations refer to the same job once the create request reaches the server.
+    if (body.id !== undefined && (typeof body.id !== 'string' || !/^J-[A-Za-z0-9-]{8,60}$/.test(body.id))) {
+      throw error(400, 'invalid_job_id');
+    }
+    if (body.id && !req.headers['idempotency-key']) throw error(400, 'idempotency_key_required');
+
+    const insert = async (client) => {
+      const id = body.id || `J-${randomBytes(6).toString('hex').toUpperCase()}`;
+      const t = now();
+      try {
+        await query(`INSERT INTO jobs(id,assigned_to,title,customer,address,scheduled_at,description,status,created_at,updated_at,device_id)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [id,userId,title,customer,address,date.toISOString(),description,'new',t,t,deviceId],client);
+      } catch (err) {
+        if (err.code === '23505') throw error(409, 'job_id_taken');
+        throw err;
+      }
+      return { status: 201, body: { job: await jobJson(await one('SELECT * FROM jobs WHERE id=$1', [id],client),client) } };
+    };
+    // An idempotency key is optional for an ordinary web create, but REQUIRED for
+    // offline creates: a retry after a lost HTTP response must not create twice.
+    const outcome = req.headers['idempotency-key']
+      ? await idempotent(req,userId,insert)
+      : await transaction(insert);
+    return send(res,outcome.status,outcome.body);
   }
   let mt;
   if (m === 'GET' && (mt = p.match(/^\/api\/jobs\/([^/]+)$/))) {
@@ -374,21 +401,6 @@ async function route(req, res) {
       return 201;
     });
     return send(res, status, { id: photo.id });
-  }
-  // Stable, authenticated URL for a customer's signature. The SVG was validated
-  // on report submission and is never exposed to other users.
-  if (m === 'GET' && (mt = p.match(/^\/api\/jobs\/([^/]+)\/signature$/))) {
-    const job = await ownedJob(mt[1], userId);
-    const report = await one('SELECT signature_svg FROM reports WHERE job_id=$1', [job.id]);
-    if (!report?.signature_svg) throw error(404,'signature_not_found');
-    res.writeHead(200, {
-      'Content-Type':'image/svg+xml; charset=utf-8',
-      'Content-Disposition':'inline; filename="fieldops-signature.svg"',
-      'X-Content-Type-Options':'nosniff',
-      'Cache-Control':'private, no-store',
-      'Content-Security-Policy':"default-src 'none'; sandbox",
-    });
-    return res.end(report.signature_svg);
   }
   if (m === 'GET' && (mt = p.match(/^\/api\/photos\/([^/]+)$/))) {
     const ph = await one('SELECT p.mime,p.data FROM photos p JOIN jobs j ON j.id=p.job_id WHERE p.id=$1 AND j.assigned_to=$2', [mt[1],userId]);

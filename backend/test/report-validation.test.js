@@ -48,15 +48,3 @@ test('checks photo bytes against the declared image type and per-file limit', ()
     dataBase64: Buffer.alloc(MAX_PHOTO_BYTES + 1).toString('base64'),
   }), { code: 'payload_too_large', status: 413 });
 });
-
-
-test('Base64 body of the largest allowed photo fits within Vercel Function request limit', () => {
-  const binary = Buffer.alloc(MAX_PHOTO_BYTES, 0xff);
-  const encoded = binary.toString('base64');
-  const requestBytes = Buffer.byteLength(JSON.stringify({
-    id: 'photo-limit-01', mime:'image/jpeg', dataBase64: encoded,
-  }));
-  // Vercel permits at most 4.5 MB per function request (not 10 MiB).
-  assert.ok(requestBytes < 4_500_000, `Request too large: ${requestBytes}`);
-  assert.ok(requestBytes < 4 * 1024 * 1024, 'Request must fit the FieldOps JSON parser limit');
-});

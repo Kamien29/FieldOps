@@ -1,181 +1,215 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
-import { API_URL } from './config';
 import { ApiError, NetworkError, apiFetch } from './api';
 import * as db from './db';
 import { emitDataChange } from './events';
-import { MAX_UPLOAD_PHOTO_BYTES, PHOTO_DIR, photoUri } from './files';
+import { API_URL } from './config';
+import { photoUri, PHOTO_DIR, MAX_UPLOAD_PHOTO_BYTES } from './files';
 import { makeUploadReadyJpeg } from './photo-processing';
+import { nextRetryAt, shouldRetry } from './retry-policy';
 import type { Job, OutboxRow, ServerJob } from './types';
 
 class LocalError extends Error {}
 
-/** Display actionable sync errors rather than raw HTTP status codes. */
-function describePermanentFailure(error: ApiError): string {
-  const messages: Record<string,string> = {
-    invalid_file_type: 'Zdjęcie ma nieprawidłowy format. Dodaj je ponownie.',
-    payload_too_large: 'Zdjęcie jest zbyt duże. Dodaj je ponownie po zmniejszeniu.',
-    photo_total_too_large: 'Przekroczono łączny limit zdjęć (40 MiB).',
-    too_many_photos: 'Maksymalnie 10 zdjęć w jednym raporcie.',
-    invalid_signature: 'Podpis ma nieprawidłowy format. Złóż podpis ponownie.',
-    invalid_recipientFullName: 'Raport wymaga imienia i nazwiska osoby odbierającej.',
-    unknown_photo: 'Serwer nie potwierdził zdjęcia. Spróbuj zsynchronizować ponownie.',
-    report_already_exists: 'Na serwerze jest już raport do tego zlecenia. Sprawdź wersję serwera.',
-    job_not_in_progress: 'Zlecenie nie jest w trakcie realizacji na serwerze.',
+/** UI-friendly, actionable descriptions of permanent backend validation errors. */
+function explain(error: ApiError): string {
+  const known: Record<string, string> = {
+    invalid_file_type: 'Nieprawidłowy format zdjęcia — dodaj zdjęcie ponownie.',
+    payload_too_large: 'Zdjęcie przekracza limit serwera — zmniejsz je.',
+    photo_total_too_large: 'Przekroczono łączny limit zdjęć dla raportu.',
+    too_many_photos: 'Można dodać maksymalnie 10 zdjęć.',
+    unknown_photo: 'Jedno ze zdjęć nie dotarło na serwer. Ponów synchronizację.',
+    invalid_signature: 'Podpis klienta jest nieprawidłowy. Złóż go ponownie.',
+    report_already_exists: 'Raport już istnieje na serwerze. Sprawdź konflikt.',
+    job_not_in_progress: 'Zlecenie nie jest już w realizacji na serwerze.',
+    job_id_taken: 'Identyfikator zlecenia jest już zajęty. Skontaktuj się z administratorem.',
   };
-  return messages[error.code] ?? `Serwer odrzucił zmianę (${error.status}: ${error.code}).`;
+  return known[error.code] ?? `Serwer odrzucił operację (${error.status}, ${error.code}).`;
 }
 
-export interface SyncResult { ok: boolean; reason?: 'offline' | 'auth' | 'error' }
-
+export interface SyncResult {
+  ok: boolean;
+  reason?: 'offline' | 'auth' | 'error' | 'backoff';
+  sent: number;
+  remaining: number;
+  nextRetryAt?: number;
+}
 let authExpired: (() => void) | null = null;
-export const setAuthExpiredHandler = (fn: (() => void) | null) => { authExpired = fn; };
-
+export function setAuthExpiredHandler(fn: (() => void) | null) { authExpired = fn; }
 let running: Promise<SyncResult> | null = null;
-let again = false;
+let rerun = false;
 
-/** Single-flight: concurrent calls coalesce; a call during a run schedules exactly one more run. */
-export function syncNow(): Promise<SyncResult> {
-  if (running) { again = true; return running; }
+/** Single-flight: two callers cannot upload the same outbox row concurrently. */
+export function syncNow(force = false): Promise<SyncResult> {
+  if (running) { rerun = true; return running; }
   running = (async () => {
     try {
-      let res: SyncResult;
-      do { again = false; res = await runOnce(); } while (again && res.ok);
-      return res;
-    } finally {
-      running = null;
-    }
+      let result: SyncResult;
+      do {
+        rerun = false;
+        result = await runOnce(force);
+      } while (rerun && result.ok);
+      return result;
+    } finally { running = null; }
   })();
   return running;
 }
 
-async function runOnce(): Promise<SyncResult> {
+async function runOnce(force: boolean): Promise<SyncResult> {
+  const deadline = Number((await db.getMeta('sync_next_retry')) || 0);
+  if (!shouldRetry(Date.now(),deadline,force)) {
+    return { ok:false, reason:'backoff', sent:0, remaining:await db.pendingCount(), nextRetryAt:deadline };
+  }
+  const before = await db.pendingCount();
   try {
     await push();
     await pull();
-    return { ok: true };
+    await db.setMeta('sync_failures','0');
+    await db.setMeta('sync_next_retry','0');
+    await db.setMeta('last_sync_success',new Date().toISOString());
+    const remaining = await db.pendingCount();
+    return { ok:remaining === 0, reason: remaining ? 'error' : undefined,
+      sent:Math.max(0,before - remaining),remaining };
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) { authExpired?.(); return { ok: false, reason: 'auth' }; }
-    if (e instanceof NetworkError) return { ok: false, reason: 'offline' };
-    return { ok: false, reason: 'error' };
-  } finally {
-    emitDataChange();
-  }
+    if (e instanceof ApiError && e.status === 401) {
+      // Never clear SQLite/offline queue here; request re-login without losing drafts.
+      authExpired?.();
+      return {ok:false,reason:'auth',sent:0,remaining:await db.pendingCount()};
+    }
+    // Backoff only transient errors. Permanent per-job errors are marked in push()
+    // and never stop the other jobs from syncing.
+    const failures = Math.min(16,Number((await db.getMeta('sync_failures')) || 0) + 1);
+    const next = nextRetryAt(Date.now(), failures);
+    await db.setMeta('sync_failures',String(failures));
+    await db.setMeta('sync_next_retry',String(next));
+    return {ok:false, reason:e instanceof NetworkError ? 'offline' : 'error',
+      sent:0,remaining:await db.pendingCount(),nextRetryAt:next};
+  } finally { emitDataChange(); }
 }
 
-async function push() {
+async function push(): Promise<void> {
   const blocked = new Set(await db.blockedJobIds());
-  for (const m of await db.listOutbox()) {
-    if (blocked.has(m.jobId)) continue; // keep order per job: nothing is sent after a conflict/error
-    const job = await db.getJob(m.jobId);
-    if (!job) { await db.deleteOutbox(m.id); continue; }
-    try {
-      await sendOne(m, job);
-    } catch (e) {
+  // Snapshot preserves original chronological order, including create -> status -> photos -> report.
+  for (const mutation of await db.listOutbox()) {
+    if (blocked.has(mutation.jobId)) continue;
+    const job = await db.getJob(mutation.jobId);
+    if (!job) {
+      // Missing parent is a permanent local consistency error, not a successful upload.
+      throw new LocalError(`Brak lokalnego zlecenia ${mutation.jobId}.`);
+    }
+    try { await sendOne(mutation,job); }
+    catch (e) {
       if (e instanceof ApiError) {
-        if (e.status === 409 && e.body?.server) {
-          await db.markConflict(m.jobId, e.body.server as ServerJob);
-        } else if (e.status === 401 || e.status === 408 || e.status === 429 || e.status >= 500) {
-          throw e; // transient: retry on next sync
-        } else {
-          await db.markJobError(m.jobId, describePermanentFailure(e));
-        }
-        blocked.add(m.jobId);
+        if (e.status === 409 && e.body?.server) await db.markConflict(mutation.jobId,e.body.server as ServerJob);
+        else if (e.status === 401 || e.status === 408 || e.status === 429 || e.status >= 500) throw e;
+        else await db.markJobError(mutation.jobId,explain(e));
+        blocked.add(mutation.jobId);
         emitDataChange();
         continue;
       }
       if (e instanceof LocalError) {
-        await db.markJobError(m.jobId, e.message);
-        blocked.add(m.jobId);
+        await db.markJobError(mutation.jobId,e.message);
+        blocked.add(mutation.jobId);
         emitDataChange();
         continue;
       }
-      throw e; // NetworkError or unexpected
+      throw e;
     }
   }
 }
 
-async function sendOne(m: OutboxRow, job: Job) {
+async function sendOne(m: OutboxRow, job: Job): Promise<void> {
+  const path = `/api/jobs/${encodeURIComponent(job.id)}`;
   switch (m.kind) {
+    case 'create': {
+      const reply = await apiFetch<{job: ServerJob}>('/api/jobs', {
+        method:'POST', idempotencyKey:m.id, body:{...m.payload,id:job.id},timeoutMs:30_000 });
+      await db.ackMutation(m.id,job.id,reply.job.version);
+      return;
+    }
+    case 'edit': {
+      const reply = await apiFetch<{job: ServerJob}>(path, {
+        method:'PATCH',idempotencyKey:m.id,body:{...m.payload,baseVersion:job.version} });
+      await db.ackMutation(m.id,job.id,reply.job.version);
+      return;
+    }
+    case 'status': {
+      const reply = await apiFetch<{job: ServerJob}>(`${path}/status`, {
+        method:'POST',idempotencyKey:m.id,body:{status:m.payload.status,baseVersion:job.version} });
+      await db.ackMutation(m.id,job.id,reply.job.version);
+      return;
+    }
     case 'photo': {
       const photo = await db.getPhoto(m.payload.photoId);
-      if (!photo) { await db.ackMutation(m.id,job.id,job.version); return; }
+      if (!photo) throw new LocalError('Nie znaleziono zdjęcia. Sprawdź lokalne pliki raportu.');
       let uri = photoUri(photo.fileName);
       let info = await FileSystem.getInfoAsync(uri);
-      if (!info.exists) throw new LocalError('Brak pliku zdjęcia na telefonie');
+      if (!info.exists) throw new LocalError('Brak zdjęcia w pamięci telefonu.');
       if (typeof info.size !== 'number' || info.size > MAX_UPLOAD_PHOTO_BYTES) {
-        // Old SDK versions could save 10 MiB photos. Upgrade those drafts safely
-        // without changing the stable photo ID in the already queued report.
         const resized = await makeUploadReadyJpeg(uri);
-        const nextName = `${photo.id}-resized.jpg`;
-        const nextUri = photoUri(nextName);
+        const nextFileName = `${photo.id}-small.jpg`;
+        const nextUri = photoUri(nextFileName);
         await FileSystem.copyAsync({from:resized,to:nextUri});
-        await db.setPhotoFileName(photo.id,nextName);
-        await FileSystem.deleteAsync(uri,{idempotent:true}).catch(() => {});
-        uri = nextUri;
-        info = await FileSystem.getInfoAsync(uri);
+        await db.setPhotoFileName(photo.id,nextFileName);
+        await FileSystem.deleteAsync(uri,{idempotent:true}).catch(()=>{});
+        uri=nextUri;
+        info=await FileSystem.getInfoAsync(uri);
       }
-      if (!info.exists || typeof info.size !== 'number' || info.size > MAX_UPLOAD_PHOTO_BYTES) {
-        throw new LocalError('Zdjęcie nie może zostać zmniejszone do 2,5 MiB.');
+      if (!info.exists || !info.size || info.size > MAX_UPLOAD_PHOTO_BYTES) {
+        throw new LocalError('Nie udało się zmniejszyć zdjęcia do limitu 2,5 MiB.');
       }
-      const dataBase64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
-      await apiFetch(`/api/jobs/${job.id}/photos`, { method: 'POST', body: { id: photo.id, mime: 'image/jpeg', dataBase64 }, timeoutMs: 60000 });
+      const dataBase64 = await FileSystem.readAsStringAsync(uri,{encoding:FileSystem.EncodingType.Base64});
+      await apiFetch(`${path}/photos`,{method:'POST',body:{id:photo.id,mime:'image/jpeg',dataBase64},timeoutMs:60_000});
+      // Atomic: photo uploaded + remove outbox. A crash before ack retries same stable ID.
       await db.acknowledgePhotoUpload(photo.id,m.id,job.id);
       return;
     }
     case 'photo_delete': {
-      await apiFetch(`/api/jobs/${job.id}/photos/${m.payload.photoId}`, { method: 'DELETE' });
-      await db.ackMutation(m.id, job.id, job.version);
-      return;
-    }
-    case 'status': {
-      const r = await apiFetch<{ job: ServerJob }>(`/api/jobs/${job.id}/status`, {
-        method: 'POST', idempotencyKey: m.id, body: { status: m.payload.status, baseVersion: job.version } });
-      await db.ackMutation(m.id, job.id, r.job.version);
+      await apiFetch(`${path}/photos/${encodeURIComponent(m.payload.photoId)}`,{method:'DELETE'});
+      await db.ackMutation(m.id,job.id,job.version);
       return;
     }
     case 'report': {
-      const r = await apiFetch<{ job: ServerJob }>(`/api/jobs/${job.id}/report`, {
-        method: 'PUT', idempotencyKey: m.id, body: { ...m.payload, baseVersion: job.version } });
-      await db.ackMutation(m.id, job.id, r.job.version);
+      const reply=await apiFetch<{job:ServerJob}>(`${path}/report`,{
+        method:'PUT',idempotencyKey:m.id,body:{...m.payload,baseVersion:job.version}});
+      await db.ackMutation(m.id,job.id,reply.job.version);
       return;
+    }
+    default: {
+      const never: never = m.kind;
+      throw new LocalError(`Nieobsługiwany typ zmiany: ${never}`);
     }
   }
 }
 
-async function pull() {
-  const since = (await db.getMeta('last_sync')) ?? '';
-  const r = await apiFetch<{ serverTime: string; jobs: ServerJob[] }>(`/api/jobs?since=${encodeURIComponent(since)}`);
-  // Update local SQLite first. If media download fails, retry on next sync.
-  await db.applyServerJobs(r.jobs);
-  await db.setMeta('last_sync', r.serverTime);
+async function pull(): Promise<void> {
+  const since=(await db.getMeta('last_sync')) ?? '';
+  const response=await apiFetch<{serverTime:string;jobs:ServerJob[]}>(
+    `/api/jobs?since=${encodeURIComponent(since)}`);
+  await db.applyServerJobs(response.jobs);
+  await db.setMeta('last_sync',response.serverTime); // only after successful SQLite update
+  // Try remote image downloads separately. Their failure must not lose the server cursor.
   await cacheRemotePhotos();
 }
 
-/**
- * Private authenticated photo download, stored in the persistent document folder.
- * Download failure does not erase the report or block subsequent offline work.
- * Files not yet downloaded are retried on each sync, including after an app restart.
- */
-async function cacheRemotePhotos() {
-  const token = await SecureStore.getItemAsync('token');
+async function cacheRemotePhotos(): Promise<void> {
+  const token=await SecureStore.getItemAsync('token');
   if (!token) return;
-  await FileSystem.makeDirectoryAsync(PHOTO_DIR, {intermediates:true});
-  const missing = await db.listRemotePhotos();
+  const missing=await db.listRemotePhotos();
+  if (!missing.length) return;
+  await FileSystem.makeDirectoryAsync(PHOTO_DIR,{intermediates:true});
   for (const photo of missing) {
-    const destination = photoUri(photo.fileName);
+    const destination=photoUri(photo.fileName);
     if ((await FileSystem.getInfoAsync(destination)).exists) continue;
-    const temp = `${destination}.download`;
+    const temp=destination+'.download';
     try {
-      const response = await FileSystem.downloadAsync(
-        `${API_URL}/api/photos/${encodeURIComponent(photo.id)}`, temp,
-        {headers:{Authorization:`Bearer ${token}`}},
-      );
-      if (response.status !== 200) throw new Error(`photo download: HTTP ${response.status}`);
+      const response=await FileSystem.downloadAsync(
+        `${API_URL}/api/photos/${encodeURIComponent(photo.id)}`,temp,
+        {headers:{Authorization:`Bearer ${token}`}});
+      if (response.status!==200) throw new Error(`HTTP ${response.status}`);
       await FileSystem.moveAsync({from:temp,to:destination});
     } catch {
-      await FileSystem.deleteAsync(temp,{idempotent:true}).catch(() => {});
-      // Photo itself remains referenced in local SQLite for later retry.
+      await FileSystem.deleteAsync(temp,{idempotent:true}).catch(()=>{});
     }
   }
 }

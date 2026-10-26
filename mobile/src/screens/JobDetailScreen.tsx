@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system/legacy';
 import { SvgXml } from 'react-native-svg';
@@ -12,7 +13,6 @@ import {
 } from '../db';
 import { onDataChange } from '../events';
 import { PHOTO_DIR, photoUri } from '../files';
-import { makeUploadReadyJpeg } from '../photo-processing';
 import { useSync } from '../SyncContext';
 import { Btn, Chip, SyncBar } from '../ui';
 import { colors, s } from '../theme';
@@ -32,7 +32,6 @@ export default function JobDetailScreen({ route, navigation }: Props) {
   const [recipientFullName, setRecipientFullName] = useState('');
   const [busy, setBusy] = useState<'photo' | 'location' | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [previewUri, setPreviewUri] = useState<string | null>(null);
 
   const latestNote = useRef('');
   const dirty = useRef(false);
@@ -87,60 +86,37 @@ export default function JobDetailScreen({ route, navigation }: Props) {
 
   if (!job || !report) return <View style={s.screen} />;
 
-  const locked = report.submitted || job.status === 'done';
-  const canEdit = job.status !== 'new' && !locked && job.syncState !== 'conflict';
-
-  // Persist every chosen photo inside the app's documents folder BEFORE enqueuing it.
-  // The original picker/cache URI may be deleted by Android or iOS at any time.
-  const persistPhoto = async (sourceUri: string) => {
-    const prepared = await makeUploadReadyJpeg(sourceUri);
-    const id = uid();
-    const fileName = `${id}.jpg`;
-    await FileSystem.makeDirectoryAsync(PHOTO_DIR, { intermediates:true });
-    await FileSystem.copyAsync({ from:prepared, to:photoUri(fileName) });
-    try {
-      await addPhoto(jobId, id, fileName);
-    } catch (error) {
-      await FileSystem.deleteAsync(photoUri(fileName), {idempotent:true});
-      throw error;
-    }
-  };
+  const locked = report.submitted || job.status === 'done' || job.status === 'cancelled';
+  const canEdit = job.status === 'in_progress' && !locked && job.syncState !== 'conflict';
 
   const takePhoto = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
       Alert.alert(t.cameraPermissionTitle, t.photoCameraPermissionDenied, [
-        {text:t.cancel,style:'cancel'},
-        {text:t.cameraSettings,onPress:() => { void Linking.openSettings(); }},
+        { text: t.cancel, style: 'cancel' },
+        { text: t.cameraSettings, onPress: () => {
+          void Linking.openSettings().catch(() => Alert.alert(t.cameraUnavailable));
+        } },
       ]);
       return;
     }
-    if (photos.length >= 10) { Alert.alert(t.maxPhotos); return; }
     setBusy('photo');
     try {
-      const shot = await ImagePicker.launchCameraAsync({ quality:0.85 });
+      const shot = await ImagePicker.launchCameraAsync({ quality: 0.8 });
       if (shot.canceled || !shot.assets[0]) return;
-      await persistPhoto(shot.assets[0].uri);
+      const small = await ImageManipulator.manipulateAsync(
+        shot.assets[0].uri, [{ resize: { width: 1600 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG });
+      const id = uid();
+      await FileSystem.makeDirectoryAsync(PHOTO_DIR, { intermediates: true }).catch(() => {});
+      await FileSystem.copyAsync({ from: small.uri, to: photoUri(`${id}.jpg`) });
+      await addPhoto(jobId, id, `${id}.jpg`);
       void syncNow();
-    } catch (error) {
-      Alert.alert(t.photoSaveFailed, error instanceof Error ? error.message : String(error));
-    } finally { setBusy(null); }
-  };
-
-  const pickPhotos = async () => {
-    const remaining = 10 - photos.length;
-    if (remaining <= 0) { Alert.alert(t.maxPhotos); return; }
-    setBusy('photo');
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes:['images'], allowsMultipleSelection:true, selectionLimit:remaining,
-      });
-      if (result.canceled) return;
-      for (const image of result.assets.slice(0,remaining)) await persistPhoto(image.uri);
-      void syncNow();
-    } catch (error) {
-      Alert.alert(t.photoSaveFailed,error instanceof Error ? error.message : String(error));
-    } finally { setBusy(null); }
+    } catch (e) {
+      Alert.alert(String(e));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const askRemovePhoto = (p: Photo) => {
@@ -213,16 +189,34 @@ export default function JobDetailScreen({ route, navigation }: Props) {
             <Text style={s.text}>{t.when}: {fmtDate(job.scheduledAt)}</Text>
           </View>
 
+          {job.status !== 'done' && job.status !== 'cancelled' && job.syncState !== 'conflict' && (
+            <View style={{marginBottom:12}}><Btn title="Edytuj zlecenie (także offline)" kind="secondary"
+              onPress={()=>navigation.navigate('JobEditor',{jobId})}/></View>
+          )}
+
           {job.syncState === 'conflict' && job.conflict && (
             <View style={[s.card, { borderColor: colors.danger }]}>
               <Text style={[s.h2, { color: colors.danger }]}>{t.conflictTitle}</Text>
               <Text style={[s.text, { marginBottom: 8 }]}>{t.conflictBody}</Text>
-              <Text style={s.h2}>{t.serverVersion}</Text>
-              <Text style={s.text}>{t.status[job.conflict.status]} · {job.conflict.address}</Text>
+              <Text style={s.h2}>Na telefonie → Na serwerze</Text>
+              {([
+                ['Tytuł',job.title,job.conflict.title],['Klient',job.customer,job.conflict.customer],
+                ['Adres',job.address,job.conflict.address],['Termin',job.scheduledAt,job.conflict.scheduledAt],
+                ['Status',job.status,job.conflict.status],['Opis',job.description,job.conflict.description??''],
+              ] as [string,string,string][]).map(([field,local,remote])=>(
+                <View key={field} style={{marginBottom:8}}>
+                  <Text style={[s.muted,{fontWeight:'700',color:local===remote?colors.muted:colors.danger}]}>{field}</Text>
+                  <Text style={s.text}>Telefon: {local}</Text><Text style={s.text}>Serwer: {remote}</Text>
+                </View>
+              ))}
               {!!job.conflict.report?.note && <Text style={s.muted}>„{job.conflict.report.note}”</Text>}
               <View style={{ gap: 8, marginTop: 12 }}>
                 <Btn title={t.keepMine} onPress={async () => { await resolveKeepMine(jobId); void syncNow(); }} />
-                <Btn title={t.useServer} kind="secondary" onPress={async () => { await resolveUseServer(jobId); void syncNow(); }} />
+                <Btn title={t.useServer} kind="secondary" onPress={() => Alert.alert('Odrzucić zmiany z telefonu?',
+                  'Wszystkie niewysłane zmiany tego zlecenia zostaną porzucone. To nieodwracalne.',[
+                    {text:'Anuluj',style:'cancel'},
+                    {text:'Przyjmij serwer',style:'destructive',onPress:async()=>{await resolveUseServer(jobId);void syncNow();}},
+                  ])} />
               </View>
             </View>
           )}
@@ -233,7 +227,11 @@ export default function JobDetailScreen({ route, navigation }: Props) {
               <Text style={s.muted}>{job.syncError}</Text>
               <View style={{ gap: 8, marginTop: 12 }}>
                 <Btn title={t.retry} onPress={async () => { await retryJob(jobId); void syncNow(); }} />
-                <Btn title={t.discard} kind="danger" onPress={async () => { await discardLocalChanges(jobId); void syncNow(); }} />
+                <Btn title={t.discard} kind="danger" onPress={() => Alert.alert('Odrzucić zmiany?',
+                  'Niewysłane zmiany tego zlecenia zostaną bezpowrotnie utracone.',[
+                    {text:'Anuluj',style:'cancel'},
+                    {text:'Odrzuć',style:'destructive',onPress:async()=>{await discardLocalChanges(jobId);void syncNow();}},
+                  ])} />
               </View>
             </View>
           )}
@@ -242,7 +240,7 @@ export default function JobDetailScreen({ route, navigation }: Props) {
             <Btn title={t.startJob} onPress={async () => { await startJob(jobId); void syncNow(); }} />
           )}
 
-          {job.status !== 'new' && (
+          {(job.status === 'in_progress' || job.status === 'done') && (
             <View style={s.card}>
               <Text style={s.h2}>{t.report}</Text>
               {locked && <Text style={[s.muted, { marginBottom: 8 }]}>{t.submittedInfo}</Text>}
@@ -284,17 +282,13 @@ export default function JobDetailScreen({ route, navigation }: Props) {
               <Text style={s.muted}>{t.photos} ({photos.length})</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 6 }}>
                 {photos.map((p) => (
-                  <Pressable key={p.id} onPress={() => setPreviewUri(photoUri(p.fileName))}
-                    onLongPress={() => canEdit && askRemovePhoto(p)}>
+                  <Pressable key={p.id} onLongPress={() => canEdit && askRemovePhoto(p)}>
                     <Image source={{ uri: photoUri(p.fileName) }} style={{ width: 84, height: 84, borderRadius: 8 }} />
                     <Text style={{ position: 'absolute', right: 4, bottom: 2, fontSize: 12 }}>{p.uploaded ? '✓' : '⏳'}</Text>
                   </Pressable>
                 ))}
               </View>
-              {canEdit && <View style={{ marginBottom: 14, gap:8 }}>
-                <Btn title={t.addPhoto} kind="secondary" busy={busy === 'photo'} onPress={takePhoto} />
-                <Btn title={t.chooseGallery} kind="secondary" busy={busy === 'photo'} onPress={pickPhotos} />
-              </View>}
+              {canEdit && <View style={{ marginBottom: 14 }}><Btn title={t.addPhoto} kind="secondary" busy={busy === 'photo'} onPress={takePhoto} /></View>}
 
               <Text style={s.muted}>{t.signature}</Text>
               {report.signatureSvg ? (
@@ -318,13 +312,6 @@ export default function JobDetailScreen({ route, navigation }: Props) {
           {canEdit && <Btn title={t.submit} busy={submitting} disabled={submitting} onPress={submit} />}
         </ScrollView>
       </KeyboardAvoidingView>
-      <Modal visible={!!previewUri} transparent animationType="fade" onRequestClose={() => setPreviewUri(null)}>
-        <Pressable onPress={() => setPreviewUri(null)}
-          style={{flex:1,backgroundColor:'#000E',alignItems:'center',justifyContent:'center',padding:12}}>
-          {previewUri ? <Image source={{uri:previewUri}} resizeMode="contain" style={{width:'100%',height:'85%'}} /> : null}
-          <Text style={{color:'#fff',fontWeight:'700',padding:16}}>Zamknij podgląd</Text>
-        </Pressable>
-      </Modal>
     </View>
   );
 }

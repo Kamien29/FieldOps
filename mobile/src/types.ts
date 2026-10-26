@@ -1,4 +1,4 @@
-export type JobStatus = 'new' | 'in_progress' | 'done';
+export type JobStatus = 'new' | 'in_progress' | 'done' | 'cancelled';
 export type SyncState = 'synced' | 'pending' | 'conflict' | 'error';
 
 export interface ServerReport {
@@ -8,12 +8,12 @@ export interface ServerReport {
 }
 export interface ServerJob {
   id: string; title: string; customer: string; address: string; scheduledAt: string;
-  status: JobStatus; version: number; updatedAt: string; report: ServerReport | null;
+  status: JobStatus; version: number; description?: string; updatedAt: string; report: ServerReport | null;
 }
 
 export interface Job {
   id: string; title: string; customer: string; address: string; scheduledAt: string;
-  status: JobStatus; version: number; syncState: SyncState; syncError: string | null;
+  status: JobStatus; version: number; description: string; updatedAt: string | null; syncState: SyncState; syncError: string | null;
   conflict: ServerJob | null; hasReport: boolean;
 }
 export interface Report {
@@ -24,5 +24,5 @@ export interface Report {
 }
 export interface Photo { id: string; jobId: string; fileName: string; uploaded: boolean; createdAt: string }
 
-export type MutationKind = 'photo' | 'photo_delete' | 'status' | 'report';
+export type MutationKind = 'create' | 'edit' | 'photo' | 'photo_delete' | 'status' | 'report';
 export interface OutboxRow { seq: number; id: string; jobId: string; kind: MutationKind; payload: any }

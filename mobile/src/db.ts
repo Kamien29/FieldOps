@@ -12,7 +12,8 @@ async function init() {
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY, title TEXT NOT NULL, customer TEXT NOT NULL, address TEXT NOT NULL,
-      scheduled_at TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL,
+      scheduled_at TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, version INTEGER NOT NULL,
+      updated_at TEXT,
       has_report INTEGER NOT NULL DEFAULT 0,
       sync_state TEXT NOT NULL DEFAULT 'synced', sync_error TEXT, conflict_json TEXT
     );
@@ -33,6 +34,12 @@ async function init() {
   `);
   const reportColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(reports)');
   const jobColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(jobs)');
+  if (!jobColumns.some((column) => column.name === 'description')) {
+    await db.execAsync("ALTER TABLE jobs ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  }
+  if (!jobColumns.some((column) => column.name === 'updated_at')) {
+    await db.execAsync('ALTER TABLE jobs ADD COLUMN updated_at TEXT');
+  }
   if (!jobColumns.some((column) => column.name === 'has_report')) {
     await db.execAsync('ALTER TABLE jobs ADD COLUMN has_report INTEGER NOT NULL DEFAULT 0');
   }
@@ -54,6 +61,7 @@ async function init() {
 /* ---------- mappers ---------- */
 const mapJob = (r: any): Job => ({
   id: r.id, title: r.title, customer: r.customer, address: r.address, scheduledAt: r.scheduled_at,
+  description: r.description ?? '', updatedAt: r.updated_at ?? null,
   status: r.status, version: r.version, syncState: r.sync_state, syncError: r.sync_error,
   conflict: r.conflict_json ? JSON.parse(r.conflict_json) : null, hasReport: !!r.has_report,
 });
@@ -106,13 +114,12 @@ export async function getPhoto(id: string): Promise<Photo | null> {
   const r = await db.getFirstAsync('SELECT * FROM photos WHERE id=?', [id]);
   return r ? mapPhoto(r) : null;
 }
-/** Photos from other clients need authenticated download once the network is available. */
+/** Photo IDs received from web/another phone; missing bytes are downloaded later. */
 export async function listRemotePhotos(): Promise<Photo[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync('SELECT * FROM photos WHERE file_name LIKE ?', ['remote-%']);
+  const database=await getDb();
+  const rows=await database.getAllAsync('SELECT * FROM photos WHERE file_name LIKE ?', ['remote-%']);
   return rows.map(mapPhoto);
 }
-
 export async function pendingCount(): Promise<number> {
   const db = await getDb();
   const r = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) AS c FROM outbox');
@@ -149,8 +156,62 @@ export async function saveDraft(jobId: string, patch: Draft) {
 async function enqueueTx(db: SQLite.SQLiteDatabase, kind: MutationKind, jobId: string, payload: object, id = uid()) {
   await db.runAsync('INSERT INTO outbox(id,job_id,kind,payload,created_at) VALUES(?,?,?,?,?)',
     [id, jobId, kind, JSON.stringify(payload), new Date().toISOString()]);
-  // Every mutation, including photos, must display a pending sync state.
+  // Photos are pending work too; always count them in the UI.
   await db.runAsync("UPDATE jobs SET sync_state='pending' WHERE id=? AND sync_state='synced'", [jobId]);
+}
+
+/** Fields usable without connectivity. `id` is created on the device and kept on server. */
+export interface JobInput {
+  title: string; customer: string; address: string; scheduledAt: string; description?: string;
+}
+function checkJobInput(input: JobInput): Required<JobInput> {
+  const title = input.title.trim();
+  const customer = input.customer.trim();
+  const address = input.address.trim();
+  const description = (input.description ?? '').trim();
+  const scheduledAt = new Date(input.scheduledAt);
+  if (!title || title.length > 200 || !customer || customer.length > 200 ||
+      !address || address.length > 300 || description.length > 5000 ||
+      !Number.isFinite(scheduledAt.getTime()) || scheduledAt.getUTCFullYear() < 2000 || scheduledAt.getUTCFullYear() > 2100) {
+    throw new Error('Uzupełnij tytuł, klienta, adres i poprawny termin zlecenia.');
+  }
+  return { title, customer, address, description, scheduledAt: scheduledAt.toISOString() };
+}
+/** Atomic: job + outbox entry survive process termination as a single SQLite transaction. */
+export async function createLocalJob(input: JobInput): Promise<string> {
+  const values = checkJobInput(input);
+  const id = `J-${uid().replace(/-/g, '').toUpperCase()}`;
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO jobs(id,title,customer,address,scheduled_at,description,status,version,updated_at,sync_state)
+       VALUES(?,?,?,?,?,?,'new',0,?,'pending')`,
+      [id,values.title,values.customer,values.address,values.scheduledAt,values.description,new Date().toISOString()]);
+    await enqueueTx(db,'create',id,{...values,id});
+  });
+  emitDataChange();
+  return id;
+}
+/** Edit local fields immediately; queue changes in chronological order. */
+export async function editLocalJob(jobId: string, input: JobInput): Promise<void> {
+  const values = checkJobInput(input);
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    const row = await db.getFirstAsync<{ sync_state: string }>('SELECT sync_state FROM jobs WHERE id=?',[jobId]);
+    if (!row) throw new Error('Zlecenie nie istnieje.');
+    if (row.sync_state === 'conflict' || row.sync_state === 'error') {
+      throw new Error('Najpierw rozwiąż konflikt lub błąd synchronizacji.');
+    }
+    await db.runAsync(
+      'UPDATE jobs SET title=?,customer=?,address=?,scheduled_at=?,description=?,updated_at=? WHERE id=?',
+      [values.title,values.customer,values.address,values.scheduledAt,values.description,new Date().toISOString(),jobId]);
+    // NEVER rewrite a pending CREATE payload: the HTTP request may already have
+    // committed on the server even if the phone lost its response. Editing that
+    // payload would silently lose this change when the idempotency replay returns.
+    // Instead keep each edit as a separate ordered, stable outbox operation.
+    await enqueueTx(db,'edit',jobId,values);
+  });
+  emitDataChange();
 }
 
 export async function addPhoto(jobId: string, id: string, fileName: string) {
@@ -182,11 +243,15 @@ async function setStatusTx(db: SQLite.SQLiteDatabase, jobId: string, status: Job
   await enqueueTx(db, 'status', jobId, { status });
 }
 export async function startJob(jobId: string) {
+  const current = await getJob(jobId);
+  if (!current || current.status !== 'new') throw new Error('Zlecenia nie można teraz rozpocząć.');
   const db = await getDb();
   await db.withTransactionAsync(() => setStatusTx(db, jobId, 'in_progress'));
   emitDataChange();
 }
 export async function submitReport(jobId: string) {
+  const current = await getJob(jobId);
+  if (!current || current.status !== 'in_progress') throw new Error('Zlecenie nie jest w realizacji.');
   const db = await getDb();
   await db.withTransactionAsync(async () => {
     const r = await getReport(jobId);
@@ -212,21 +277,19 @@ export async function deleteOutbox(id: string) {
   const db = await getDb();
   await db.runAsync('DELETE FROM outbox WHERE id=?', [id]);
 }
-/** Keep the same photo ID when re-compressing a draft created by an old app version. */
-export async function setPhotoFileName(id: string, fileName: string) {
-  const db = await getDb();
-  await db.runAsync('UPDATE photos SET file_name=? WHERE id=? AND uploaded=0', [fileName,id]);
-}
-
-/** Atomically acknowledge an uploaded photo and its outbox item. */
+/** Photo progress and ack share one transaction so a crash cannot send it twice accidentally. */
 export async function acknowledgePhotoUpload(photoId: string, mutationId: string, jobId: string) {
   const db = await getDb();
   await db.withTransactionAsync(async () => {
-    await db.runAsync('UPDATE photos SET uploaded=1 WHERE id=?', [photoId]);
-    await db.runAsync('DELETE FROM outbox WHERE id=?', [mutationId]);
-    const left = await db.getFirstAsync<{c:number}>('SELECT COUNT(*) AS c FROM outbox WHERE job_id=?',[jobId]);
+    await db.runAsync('UPDATE photos SET uploaded=1 WHERE id=?',[photoId]);
+    await db.runAsync('DELETE FROM outbox WHERE id=?',[mutationId]);
+    const left = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) AS c FROM outbox WHERE job_id=?',[jobId]);
     if (!left?.c) await db.runAsync("UPDATE jobs SET sync_state='synced',sync_error=NULL WHERE id=?",[jobId]);
   });
+}
+export async function setPhotoFileName(id: string, fileName: string) {
+  const db = await getDb();
+  await db.runAsync('UPDATE photos SET file_name=? WHERE id=? AND uploaded=0',[fileName,id]);
 }
 /** A report/status mutation was accepted by the server. */
 export async function ackMutation(mutationId: string, jobId: string, serverVersion: number) {
@@ -250,20 +313,21 @@ export async function markJobError(jobId: string, message: string) {
 
 async function writeServerJob(db: SQLite.SQLiteDatabase, sj: ServerJob) {
   await db.runAsync(
-    `INSERT INTO jobs(id,title,customer,address,scheduled_at,status,version,has_report,sync_state,sync_error,conflict_json)
-     VALUES(?,?,?,?,?,?,?,?,'synced',NULL,NULL)
+    `INSERT INTO jobs(id,title,customer,address,scheduled_at,description,status,version,updated_at,has_report,sync_state,sync_error,conflict_json)
+     VALUES(?,?,?,?,?,?,?,?,?,?,'synced',NULL,NULL)
      ON CONFLICT(id) DO UPDATE SET title=excluded.title, customer=excluded.customer, address=excluded.address,
-       scheduled_at=excluded.scheduled_at, status=excluded.status, version=excluded.version,
-       has_report=excluded.has_report, sync_state='synced', sync_error=NULL, conflict_json=NULL`,
-    [sj.id, sj.title, sj.customer, sj.address, sj.scheduledAt, sj.status, sj.version, sj.report ? 1 : 0]);
+       scheduled_at=excluded.scheduled_at,description=excluded.description,updated_at=excluded.updated_at,
+       status=excluded.status, version=excluded.version, has_report=excluded.has_report,
+       sync_state='synced', sync_error=NULL, conflict_json=NULL`,
+    [sj.id, sj.title, sj.customer, sj.address, sj.scheduledAt, sj.description ?? '',
+      sj.status, sj.version, sj.updatedAt ?? null, sj.report ? 1 : 0]);
   if (sj.report) {
-    // A photo may have been uploaded on the web or another phone. Remember its ID
-    // offline, then download the bytes separately using the user's bearer token.
+    // Remote photos become locally addressable even when the phone is offline later.
     for (const id of sj.report.photoIds || []) {
       await db.runAsync(
         `INSERT OR IGNORE INTO photos(id,job_id,file_name,uploaded,created_at)
          VALUES(?,?,?,1,?)`,
-        [id, sj.id, `remote-${id}.jpg`, sj.report.completedAt || new Date().toISOString()]);
+        [id,sj.id,`remote-${id}.jpg`,sj.report.completedAt || new Date().toISOString()]);
     }
     // Never overwrite an unsent local draft; overwrite submitted/missing local reports.
     const local = await db.getFirstAsync<{ submitted: number }>('SELECT submitted FROM reports WHERE job_id=?', [sj.id]);
@@ -288,7 +352,7 @@ export async function applyServerJobs(jobs: ServerJob[]) {
   await db.withTransactionAsync(async () => {
     for (const sj of jobs) {
       const busy = await db.getFirstAsync<{ c: number }>(
-        `SELECT (SELECT COUNT(*) FROM outbox WHERE job_id=? AND kind IN ('report','status'))
+        `SELECT (SELECT COUNT(*) FROM outbox WHERE job_id=?)
               + (SELECT COUNT(*) FROM jobs WHERE id=? AND sync_state IN ('conflict','error')) AS c`, [sj.id, sj.id]);
       if (busy?.c) continue;
       await writeServerJob(db, sj);
@@ -302,11 +366,11 @@ export async function resolveKeepMine(jobId: string) {
   const job = await getJob(jobId);
   if (!job?.conflict) return;
   const s = job.conflict;
-  // Adopt the server's base data (title/address/...) and version; keep my status + report, resend my mutations.
+  // Keep local field values and queued operations, adopt ONLY current server version.
+  // An edit mutation will resubmit the local values against the new baseVersion.
   await db.runAsync(
-    `UPDATE jobs SET title=?, customer=?, address=?, scheduled_at=?, version=?,
-       sync_state='pending', conflict_json=NULL, sync_error=NULL WHERE id=?`,
-    [s.title, s.customer, s.address, s.scheduledAt, s.version, jobId]);
+    `UPDATE jobs SET version=?,sync_state='pending',conflict_json=NULL,sync_error=NULL WHERE id=?`,
+    [s.version,jobId]);
   emitDataChange();
 }
 export async function resolveUseServer(jobId: string) {
@@ -315,7 +379,7 @@ export async function resolveUseServer(jobId: string) {
   if (!job?.conflict) return;
   const server = job.conflict;
   await db.withTransactionAsync(async () => {
-    await db.runAsync("DELETE FROM outbox WHERE job_id=? AND kind IN ('report','status')", [jobId]);
+    await db.runAsync('DELETE FROM outbox WHERE job_id=?',[jobId]);
     // Server has a report -> let it overwrite the local one (submitted=1 allows overwrite).
     // Server has none -> keep my text as an editable, unsent draft.
     await db.runAsync('UPDATE reports SET submitted=? WHERE job_id=?', [server.report ? 1 : 0, jobId]);

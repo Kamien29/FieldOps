@@ -29,13 +29,27 @@ export function Chip({ label, color = colors.primary, bg = colors.primarySoft }:
 }
 
 export function SyncBar() {
-  const { online, syncing, pending, syncError } = useSync();
-  const text = !online ? t.offline : syncing ? t.syncing : syncError ? syncError : pending > 0 ? t.pendingN(pending) : t.allSynced;
-  const bg = !online || syncError ? '#FEE2E2' : pending > 0 ? colors.primarySoft : '#DCFCE7';
-  const fg = !online || syncError ? colors.danger : pending > 0 ? colors.warn : colors.ok;
+  const { online, syncing, pending, syncNow, lastResult, lastSuccessfulSync } = useSync();
+  const text = !online ? t.offline : syncing ? t.syncing : pending > 0 ? t.pendingN(pending) : t.allSynced;
+  const bg = !online ? '#FEE2E2' : pending > 0 ? colors.primarySoft : '#DCFCE7';
+  const fg = !online ? colors.danger : pending > 0 ? colors.warn : colors.ok;
   return (
     <View style={{ backgroundColor: bg, paddingVertical: 6, paddingHorizontal: 16 }}>
-      <Text style={[s.muted, { color: fg, fontWeight: '600' }]}>{text}</Text>
+      <View style={[s.row,{justifyContent:'space-between',alignItems:'center'}]}>
+        <Text style={[s.muted,{color:fg,fontWeight:'600',flex:1}]}>{text}</Text>
+        <Pressable accessibilityRole="button" disabled={syncing} onPress={()=>void syncNow()}
+          style={{paddingHorizontal:12,paddingVertical:5,backgroundColor:'#fff',borderRadius:8}}>
+          <Text style={{color:colors.primary,fontWeight:'700'}}>{syncing?'Trwa…':'Synchronizuj'}</Text>
+        </Pressable>
+      </View>
+      {lastResult && <Text style={[s.muted,{color:fg,fontSize:11}]}>
+        {lastResult.ok ? `Wysłano: ${lastResult.sent}; pozostało: ${lastResult.remaining}` :
+          `Oczekuje: ${lastResult.remaining} — ${lastResult.reason==='backoff'?'ponowienie później':
+            lastResult.reason==='offline'?'brak sieci':lastResult.reason==='auth'?'sesja wygasła':'sprawdź błędy zleceń'}`}
+      </Text>}
+      {lastSuccessfulSync && <Text style={[s.muted,{fontSize:10,color:fg}]}>
+        Ostatnie pobranie: {new Date(lastSuccessfulSync).toLocaleString('pl-PL')}
+      </Text>}
     </View>
   );
 }

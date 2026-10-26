@@ -1,0 +1,36 @@
+{
+  "modified": [
+    "fieldops-web/index.html",
+    "mobile/.env.example",
+    "mobile/App.tsx",
+    "mobile/package.json",
+    "backend/package.json",
+    "backend/src/server.js",
+    "backend/src/migrate.js",
+    "mobile/src/nav.ts",
+    "mobile/src/files.ts",
+    "mobile/src/strings.ts",
+    "mobile/src/types.ts",
+    "mobile/src/sync.ts",
+    "mobile/src/db.ts",
+    "mobile/src/ui.tsx",
+    "mobile/src/config.ts",
+    "mobile/src/SyncContext.tsx",
+    "mobile/src/screens/JobDetailScreen.tsx",
+    "mobile/src/screens/LoginScreen.tsx",
+    "mobile/src/screens/JobListScreen.tsx"
+  ],
+  "added": [
+    "backend/test/week4-http.test.js",
+    "backend/test/migration-policy.test.js",
+    "backend/src/migration-policy.js",
+    "mobile/test/retry-policy.test.mjs",
+    "mobile/test/week4-sqlite.test.mjs",
+    "mobile/src/photo-processing.ts",
+    "mobile/src/retry-policy.ts",
+    "mobile/src/screens/JobEditorScreen.tsx",
+    "TYDZIEN-4-START.md",
+    "docs/TEST-TYDZIEN-4.md",
+    "docs/WDROZENIE-TYDZIEN-4.md"
+  ]
+}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
 import { Alert, KeyboardAvoidingView, Platform, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ApiError, NetworkError, login } from '../api';
@@ -16,7 +17,14 @@ export default function LoginScreen() {
   const submit = async () => {
     setBusy(true);
     try {
-      await login(email.trim(), password);
+      const loggedInUser=await login(email.trim(), password);
+      const previousOwner=await SecureStore.getItemAsync('fieldops_owner_id');
+      if (previousOwner && previousOwner !== loggedInUser.id) {
+        await SecureStore.deleteItemAsync('token');
+        Alert.alert('Inne konto','Na telefonie są dane poprzedniego użytkownika. Zaloguj się na poprzednie konto i zsynchronizuj zmiany.');
+        return;
+      }
+      await SecureStore.setItemAsync('fieldops_owner_id',loggedInUser.id);
       onLoggedIn();
     } catch (e) {
       const msg = e instanceof NetworkError ? t.loginNeedsNetwork

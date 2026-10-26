@@ -1,6 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
 import { API_URL } from './config';
-import { getMeta, pendingCount, setMeta, wipeLocalData } from './db';
 
 export class NetworkError extends Error {}
 export class ApiError extends Error {
@@ -42,15 +41,6 @@ export async function apiFetch<T>(path: string, opts: Opts = {}): Promise<T> {
 export async function login(email: string, password: string) {
   const r = await apiFetch<{ token: string; user: { id: string; name: string; email: string } }>(
     '/api/login', { method: 'POST', body: { email, password }, auth: false, timeoutMs: 15000 });
-  const previousAccountId = (await getMeta('account_user_id')) ||
-    (await SecureStore.getItemAsync('token'))?.split('.')[0] || null;
-  if (previousAccountId && previousAccountId !== r.user.id) {
-    if (await pendingCount() > 0) {
-      throw new Error('Na telefonie są niewysłane zmiany innego konta. Zaloguj się na poprzednie konto i zsynchronizuj dane.');
-    }
-    await wipeLocalData();
-  }
-  await setMeta('account_user_id', r.user.id);
   await SecureStore.setItemAsync('token', r.token);
   return r.user;
 }
