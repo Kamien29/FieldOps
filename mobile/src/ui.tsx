@@ -29,10 +29,10 @@ export function Chip({ label, color = colors.primary, bg = colors.primarySoft }:
 }
 
 export function SyncBar() {
-  const { online, syncing, pending } = useSync();
-  const text = !online ? t.offline : syncing ? t.syncing : pending > 0 ? t.pendingN(pending) : t.allSynced;
-  const bg = !online ? '#FEE2E2' : pending > 0 ? colors.primarySoft : '#DCFCE7';
-  const fg = !online ? colors.danger : pending > 0 ? colors.warn : colors.ok;
+  const { online, syncing, pending, syncError } = useSync();
+  const text = !online ? t.offline : syncing ? t.syncing : syncError ? syncError : pending > 0 ? t.pendingN(pending) : t.allSynced;
+  const bg = !online || syncError ? '#FEE2E2' : pending > 0 ? colors.primarySoft : '#DCFCE7';
+  const fg = !online || syncError ? colors.danger : pending > 0 ? colors.warn : colors.ok;
   return (
     <View style={{ backgroundColor: bg, paddingVertical: 6, paddingHorizontal: 16 }}>
       <Text style={[s.muted, { color: fg, fontWeight: '600' }]}>{text}</Text>

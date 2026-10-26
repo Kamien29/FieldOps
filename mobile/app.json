@@ -11,34 +11,14 @@
     },
     "android": {
       "package": "com.example.fieldops",
-      "permissions": [
-        "CAMERA",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ]
+      "permissions": ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "plugins": [
       "expo-sqlite",
       "expo-secure-store",
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "FieldOps potrzebuje aparatu do skanowania kodów QR urządzeń."
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "cameraPermission": "FieldOps potrzebuje aparatu do robienia zdjęć w raporcie."
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "FieldOps zapisuje lokalizację wykonania usługi w raporcie."
-        }
-      ],
-      "expo-asset"
+      ["expo-camera", { "cameraPermission": "FieldOps potrzebuje aparatu do skanowania kodów QR urządzeń." }],
+      ["expo-image-picker", { "cameraPermission": "FieldOps potrzebuje aparatu do robienia zdjęć w raporcie." }],
+      ["expo-location", { "locationWhenInUsePermission": "FieldOps zapisuje lokalizację wykonania usługi w raporcie." }]
     ]
   }
 }

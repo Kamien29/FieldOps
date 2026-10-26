@@ -18,7 +18,7 @@ export const t = {
   completedAt: 'Data wykonania',
   deviceCode: 'Kod urządzenia', scan: 'Skanuj QR', rescan: 'Skanuj ponownie',
   none: 'brak', location: 'Lokalizacja', getLocation: 'Pobierz lokalizację', gettingLocation: 'Ustalanie lokalizacji…',
-  photos: 'Zdjęcia', addPhoto: 'Zrób zdjęcie', removePhoto: 'Usuń zdjęcie?', signature: 'Podpis klienta', sign: 'Podpisz', resign: 'Podpisz ponownie',
+  photos: 'Zdjęcia', addPhoto: 'Zrób zdjęcie', chooseGallery:'Dodaj z galerii', maxPhotos:'Maksymalnie 10 zdjęć w raporcie.', photoSaveFailed:'Nie zapisano zdjęcia', removePhoto: 'Usuń zdjęcie?', signature: 'Podpis klienta', sign: 'Podpisz', resign: 'Podpisz ponownie',
   submit: 'Zakończ i wyślij raport', noteRequired: 'Uzupełnij notatkę z wykonanych prac.',
   submitFailed: 'Nie udało się zapisać raportu lokalnie. Wprowadzone dane pozostały w formularzu.',
   confirmSubmitTitle: 'Zakończyć zlecenie?', confirmSubmitBody: 'Po zakończeniu raport nie będzie edytowalny. Zostanie wysłany, gdy będzie sieć.',

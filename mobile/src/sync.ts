@@ -1,11 +1,30 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import * as SecureStore from 'expo-secure-store';
+import { API_URL } from './config';
 import { ApiError, NetworkError, apiFetch } from './api';
 import * as db from './db';
 import { emitDataChange } from './events';
-import { photoUri } from './files';
+import { MAX_UPLOAD_PHOTO_BYTES, PHOTO_DIR, photoUri } from './files';
+import { makeUploadReadyJpeg } from './photo-processing';
 import type { Job, OutboxRow, ServerJob } from './types';
 
 class LocalError extends Error {}
+
+/** Display actionable sync errors rather than raw HTTP status codes. */
+function describePermanentFailure(error: ApiError): string {
+  const messages: Record<string,string> = {
+    invalid_file_type: 'Zdjęcie ma nieprawidłowy format. Dodaj je ponownie.',
+    payload_too_large: 'Zdjęcie jest zbyt duże. Dodaj je ponownie po zmniejszeniu.',
+    photo_total_too_large: 'Przekroczono łączny limit zdjęć (40 MiB).',
+    too_many_photos: 'Maksymalnie 10 zdjęć w jednym raporcie.',
+    invalid_signature: 'Podpis ma nieprawidłowy format. Złóż podpis ponownie.',
+    invalid_recipientFullName: 'Raport wymaga imienia i nazwiska osoby odbierającej.',
+    unknown_photo: 'Serwer nie potwierdził zdjęcia. Spróbuj zsynchronizować ponownie.',
+    report_already_exists: 'Na serwerze jest już raport do tego zlecenia. Sprawdź wersję serwera.',
+    job_not_in_progress: 'Zlecenie nie jest w trakcie realizacji na serwerze.',
+  };
+  return messages[error.code] ?? `Serwer odrzucił zmianę (${error.status}: ${error.code}).`;
+}
 
 export interface SyncResult { ok: boolean; reason?: 'offline' | 'auth' | 'error' }
 
@@ -59,7 +78,7 @@ async function push() {
         } else if (e.status === 401 || e.status === 408 || e.status === 429 || e.status >= 500) {
           throw e; // transient: retry on next sync
         } else {
-          await db.markJobError(m.jobId, `${e.status} ${e.code}`);
+          await db.markJobError(m.jobId, describePermanentFailure(e));
         }
         blocked.add(m.jobId);
         emitDataChange();
@@ -80,13 +99,28 @@ async function sendOne(m: OutboxRow, job: Job) {
   switch (m.kind) {
     case 'photo': {
       const photo = await db.getPhoto(m.payload.photoId);
-      if (!photo) { await db.deleteOutbox(m.id); return; }
-      const uri = photoUri(photo.fileName);
-      if (!(await FileSystem.getInfoAsync(uri)).exists) throw new LocalError('Brak pliku zdjęcia na telefonie');
+      if (!photo) { await db.ackMutation(m.id,job.id,job.version); return; }
+      let uri = photoUri(photo.fileName);
+      let info = await FileSystem.getInfoAsync(uri);
+      if (!info.exists) throw new LocalError('Brak pliku zdjęcia na telefonie');
+      if (typeof info.size !== 'number' || info.size > MAX_UPLOAD_PHOTO_BYTES) {
+        // Old SDK versions could save 10 MiB photos. Upgrade those drafts safely
+        // without changing the stable photo ID in the already queued report.
+        const resized = await makeUploadReadyJpeg(uri);
+        const nextName = `${photo.id}-resized.jpg`;
+        const nextUri = photoUri(nextName);
+        await FileSystem.copyAsync({from:resized,to:nextUri});
+        await db.setPhotoFileName(photo.id,nextName);
+        await FileSystem.deleteAsync(uri,{idempotent:true}).catch(() => {});
+        uri = nextUri;
+        info = await FileSystem.getInfoAsync(uri);
+      }
+      if (!info.exists || typeof info.size !== 'number' || info.size > MAX_UPLOAD_PHOTO_BYTES) {
+        throw new LocalError('Zdjęcie nie może zostać zmniejszone do 2,5 MiB.');
+      }
       const dataBase64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
       await apiFetch(`/api/jobs/${job.id}/photos`, { method: 'POST', body: { id: photo.id, mime: 'image/jpeg', dataBase64 }, timeoutMs: 60000 });
-      await db.markPhotoUploaded(photo.id);
-      await db.deleteOutbox(m.id);
+      await db.acknowledgePhotoUpload(photo.id,m.id,job.id);
       return;
     }
     case 'photo_delete': {
@@ -112,6 +146,36 @@ async function sendOne(m: OutboxRow, job: Job) {
 async function pull() {
   const since = (await db.getMeta('last_sync')) ?? '';
   const r = await apiFetch<{ serverTime: string; jobs: ServerJob[] }>(`/api/jobs?since=${encodeURIComponent(since)}`);
+  // Update local SQLite first. If media download fails, retry on next sync.
   await db.applyServerJobs(r.jobs);
   await db.setMeta('last_sync', r.serverTime);
+  await cacheRemotePhotos();
+}
+
+/**
+ * Private authenticated photo download, stored in the persistent document folder.
+ * Download failure does not erase the report or block subsequent offline work.
+ * Files not yet downloaded are retried on each sync, including after an app restart.
+ */
+async function cacheRemotePhotos() {
+  const token = await SecureStore.getItemAsync('token');
+  if (!token) return;
+  await FileSystem.makeDirectoryAsync(PHOTO_DIR, {intermediates:true});
+  const missing = await db.listRemotePhotos();
+  for (const photo of missing) {
+    const destination = photoUri(photo.fileName);
+    if ((await FileSystem.getInfoAsync(destination)).exists) continue;
+    const temp = `${destination}.download`;
+    try {
+      const response = await FileSystem.downloadAsync(
+        `${API_URL}/api/photos/${encodeURIComponent(photo.id)}`, temp,
+        {headers:{Authorization:`Bearer ${token}`}},
+      );
+      if (response.status !== 200) throw new Error(`photo download: HTTP ${response.status}`);
+      await FileSystem.moveAsync({from:temp,to:destination});
+    } catch {
+      await FileSystem.deleteAsync(temp,{idempotent:true}).catch(() => {});
+      // Photo itself remains referenced in local SQLite for later retry.
+    }
+  }
 }

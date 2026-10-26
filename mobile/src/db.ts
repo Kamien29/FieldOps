@@ -106,6 +106,13 @@ export async function getPhoto(id: string): Promise<Photo | null> {
   const r = await db.getFirstAsync('SELECT * FROM photos WHERE id=?', [id]);
   return r ? mapPhoto(r) : null;
 }
+/** Photos from other clients need authenticated download once the network is available. */
+export async function listRemotePhotos(): Promise<Photo[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync('SELECT * FROM photos WHERE file_name LIKE ?', ['remote-%']);
+  return rows.map(mapPhoto);
+}
+
 export async function pendingCount(): Promise<number> {
   const db = await getDb();
   const r = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) AS c FROM outbox');
@@ -142,9 +149,8 @@ export async function saveDraft(jobId: string, patch: Draft) {
 async function enqueueTx(db: SQLite.SQLiteDatabase, kind: MutationKind, jobId: string, payload: object, id = uid()) {
   await db.runAsync('INSERT INTO outbox(id,job_id,kind,payload,created_at) VALUES(?,?,?,?,?)',
     [id, jobId, kind, JSON.stringify(payload), new Date().toISOString()]);
-  if (kind !== 'photo') {
-    await db.runAsync("UPDATE jobs SET sync_state='pending' WHERE id=? AND sync_state='synced'", [jobId]);
-  }
+  // Every mutation, including photos, must display a pending sync state.
+  await db.runAsync("UPDATE jobs SET sync_state='pending' WHERE id=? AND sync_state='synced'", [jobId]);
 }
 
 export async function addPhoto(jobId: string, id: string, fileName: string) {
@@ -206,9 +212,21 @@ export async function deleteOutbox(id: string) {
   const db = await getDb();
   await db.runAsync('DELETE FROM outbox WHERE id=?', [id]);
 }
-export async function markPhotoUploaded(id: string) {
+/** Keep the same photo ID when re-compressing a draft created by an old app version. */
+export async function setPhotoFileName(id: string, fileName: string) {
   const db = await getDb();
-  await db.runAsync('UPDATE photos SET uploaded=1 WHERE id=?', [id]);
+  await db.runAsync('UPDATE photos SET file_name=? WHERE id=? AND uploaded=0', [fileName,id]);
+}
+
+/** Atomically acknowledge an uploaded photo and its outbox item. */
+export async function acknowledgePhotoUpload(photoId: string, mutationId: string, jobId: string) {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('UPDATE photos SET uploaded=1 WHERE id=?', [photoId]);
+    await db.runAsync('DELETE FROM outbox WHERE id=?', [mutationId]);
+    const left = await db.getFirstAsync<{c:number}>('SELECT COUNT(*) AS c FROM outbox WHERE job_id=?',[jobId]);
+    if (!left?.c) await db.runAsync("UPDATE jobs SET sync_state='synced',sync_error=NULL WHERE id=?",[jobId]);
+  });
 }
 /** A report/status mutation was accepted by the server. */
 export async function ackMutation(mutationId: string, jobId: string, serverVersion: number) {
@@ -217,7 +235,7 @@ export async function ackMutation(mutationId: string, jobId: string, serverVersi
     await db.runAsync('DELETE FROM outbox WHERE id=?', [mutationId]);
     await db.runAsync('UPDATE jobs SET version=? WHERE id=?', [serverVersion, jobId]);
     const left = await db.getFirstAsync<{ c: number }>(
-      "SELECT COUNT(*) AS c FROM outbox WHERE job_id=? AND kind IN ('report','status')", [jobId]);
+      'SELECT COUNT(*) AS c FROM outbox WHERE job_id=?', [jobId]);
     if (!left?.c) await db.runAsync("UPDATE jobs SET sync_state='synced', sync_error=NULL WHERE id=?", [jobId]);
   });
 }
@@ -239,6 +257,14 @@ async function writeServerJob(db: SQLite.SQLiteDatabase, sj: ServerJob) {
        has_report=excluded.has_report, sync_state='synced', sync_error=NULL, conflict_json=NULL`,
     [sj.id, sj.title, sj.customer, sj.address, sj.scheduledAt, sj.status, sj.version, sj.report ? 1 : 0]);
   if (sj.report) {
+    // A photo may have been uploaded on the web or another phone. Remember its ID
+    // offline, then download the bytes separately using the user's bearer token.
+    for (const id of sj.report.photoIds || []) {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO photos(id,job_id,file_name,uploaded,created_at)
+         VALUES(?,?,?,1,?)`,
+        [id, sj.id, `remote-${id}.jpg`, sj.report.completedAt || new Date().toISOString()]);
+    }
     // Never overwrite an unsent local draft; overwrite submitted/missing local reports.
     const local = await db.getFirstAsync<{ submitted: number }>('SELECT submitted FROM reports WHERE job_id=?', [sj.id]);
     if (!local || local.submitted) {

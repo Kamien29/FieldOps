@@ -5,19 +5,26 @@ import { pendingCount } from './db';
 import { onDataChange } from './events';
 import { setAuthExpiredHandler, syncNow as runSync } from './sync';
 
-interface SyncApi { online: boolean; syncing: boolean; pending: number; syncNow: () => Promise<void> }
-const Ctx = createContext<SyncApi>({ online: true, syncing: false, pending: 0, syncNow: async () => {} });
+interface SyncApi { online: boolean; syncing: boolean; pending: number; syncError: string | null; syncNow: () => Promise<void> }
+const Ctx = createContext<SyncApi>({ online: true, syncing: false, pending: 0, syncError:null, syncNow: async () => {} });
 export const useSync = () => useContext(Ctx);
 
 export function SyncProvider({ children, onAuthExpired }: { children: React.ReactNode; onAuthExpired: () => void }) {
   const [online, setOnline] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [pending, setPending] = useState(0);
+  const [syncError,setSyncError] = useState<string | null>(null);
   const onlineRef = useRef(true);
 
   const syncNow = useCallback(async () => {
     setSyncing(true);
-    try { await runSync(); } finally { setSyncing(false); }
+    try {
+      const result = await runSync();
+      setSyncError(result.ok ? null : result.reason === 'offline'
+        ? 'Brak połączenia z API FieldOps. Dane zostają w telefonie.'
+        : result.reason === 'auth' ? 'Zaloguj się ponownie, aby wysłać zmiany.'
+        : 'Synchronizacja nie powiodła się. Ponów próbę po sprawdzeniu serwera.');
+    } finally { setSyncing(false); }
   }, []);
 
   useEffect(() => {
@@ -45,6 +52,6 @@ export function SyncProvider({ children, onAuthExpired }: { children: React.Reac
     return () => { unsub(); sub.remove(); clearInterval(timer); };
   }, [syncNow]);
 
-  const value = useMemo(() => ({ online, syncing, pending, syncNow }), [online, syncing, pending, syncNow]);
+  const value = useMemo(() => ({ online, syncing, pending, syncError, syncNow }), [online, syncing, pending, syncError, syncNow]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

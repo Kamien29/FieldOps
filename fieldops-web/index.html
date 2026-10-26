@@ -127,7 +127,7 @@ footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
           </div>
         </fieldset>
         <fieldset class="report-fields" style="border:0;padding:0;margin:0">
-          <legend style="font-size:12px;color:#64748b;font-weight:700">Zdjęcia (opcjonalnie, JPEG / PNG / WebP; maks. 10 zdjęć po 10 MiB)</legend>
+          <legend style="font-size:12px;color:#64748b;font-weight:700">Zdjęcia (JPEG / PNG / WebP; maks. 10 zdjęć; większe pliki kompresowane przed wysłaniem)</legend>
           <input id="reportPhotosInput" type="file" accept="image/jpeg,image/png,image/webp" multiple>
           <div id="reportPhotos" class="report-photos" aria-live="polite"></div>
         </fieldset>
@@ -179,6 +179,7 @@ const apiErrors = {
   invalid_file_type:'Zawartość pliku nie odpowiada deklarowanemu formatowi.',
   invalid_data:'Nie można odczytać pliku zdjęcia.',
   invalid_photo_id:'Nieprawidłowy identyfikator zdjęcia.',
+  photo_too_large_for_upload:'Zdjęcie jest zbyt duże do przesłania na Vercel. Spróbuj dodać mniejszy plik.',
   payload_too_large:'Zdjęcie przekracza limit 10 MiB.',
   too_many_photos:'Osiągnięto limit 10 zdjęć dla zlecenia.',
   photo_total_too_large:'Łączny rozmiar zdjęć przekracza limit 40 MiB.',
@@ -551,6 +552,40 @@ function hasPhotoSignature(bytes, mime) {
     String.fromCharCode(...bytes.subarray(0,4)) === 'RIFF' &&
     String.fromCharCode(...bytes.subarray(8,12)) === 'WEBP';
 }
+// Vercel accepts at most 4.5 MB per Function request. Binary photos are
+// Base64-encoded, so keep the image at most 2.5 MiB (~3.34 MiB after encoding).
+const MAX_REPORT_UPLOAD_BYTES = Math.floor(2.5 * 1024 * 1024);
+
+/** Resize/convert large photos locally before uploading, without external services. */
+async function prepareReportPhoto(file) {
+  if (file.size <= MAX_REPORT_UPLOAD_BYTES) return file;
+  const bitmap = await createImageBitmap(file);
+  try {
+    for (const maxSide of [1600, 1200, 900, 650]) {
+      const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
+      canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Nie można przetworzyć zdjęcia w tej przeglądarce.');
+      // White background avoids black transparency after PNG/WebP -> JPEG conversion.
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      for (const quality of [0.78, 0.60, 0.45]) {
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+        if (blob && blob.size && blob.size <= MAX_REPORT_UPLOAD_BYTES) {
+          const original = file.name.replace(/\.[^.]+$/, '');
+          return new File([blob], `${original}-pomniejszone.jpg`, {type:'image/jpeg'});
+        }
+      }
+    }
+  } finally {
+    bitmap.close();
+  }
+  throw new Error('Nie udało się zmniejszyć zdjęcia do bezpiecznego rozmiaru. Wybierz mniejsze zdjęcie.');
+}
+
 async function addReportPhotos(files) {
   if (reportBusy) return;
   reportPreparingPhotos = true;
@@ -571,19 +606,26 @@ async function addReportPhotos(files) {
         reportMessage(`Zdjęcie ${file.name} przekracza limit 10 MiB lub jest puste.`,true);
         continue;
       }
-      if (reportPhotos.reduce((sum,photo) => sum+photo.file.size,0)+file.size > 40 * 1024 * 1024) {
-        reportMessage('Łączny rozmiar zdjęć przekracza limit 40 MiB.',true);
-        continue;
-      }
       const bytes = new Uint8Array(await file.arrayBuffer());
       if (!hasPhotoSignature(bytes,file.type)) {
         reportMessage(`Zawartość pliku ${file.name} nie odpowiada formatowi zdjęcia.`,true);
         continue;
       }
+      let prepared;
+      try {
+        prepared = await prepareReportPhoto(file);
+      } catch (error) {
+        reportMessage(`${file.name}: ${error.message}`,true);
+        continue;
+      }
+      if (reportPhotos.reduce((sum,photo) => sum+photo.file.size,0)+prepared.size > 40 * 1024 * 1024) {
+        reportMessage('Łączny rozmiar zdjęć przekracza limit 40 MiB.',true);
+        continue;
+      }
       reportPhotos.push({
-        file,
+        file:prepared,
         id:crypto.randomUUID(),
-        previewUrl:URL.createObjectURL(file),
+        previewUrl:URL.createObjectURL(prepared),
         uploaded:false,
         uploading:false
       });

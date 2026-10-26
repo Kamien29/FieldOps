@@ -7,7 +7,8 @@ import {
 } from './report-validation.js';
 import { createReport } from './report-service.js';
 
-const MAX_BODY = 15 * 1024 * 1024;
+// Must remain below Vercel's 4.5 MB request limit. Each image is Base64 JSON.
+const MAX_BODY = 4 * 1024 * 1024;
 const STATUSES = ['new', 'in_progress', 'done', 'cancelled'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SESSION_COOKIE = 'fieldops_session';
@@ -135,13 +136,15 @@ async function route(req, res) {
     if (!EMAIL_RE.test(email) || email.length > 254) throw error(400, 'invalid_email');
     if (typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 200) throw error(400, 'invalid_password');
     const id = `u-${randomUUID()}`;
+    // Validate TOKEN_SECRET *before* writing the user: configuration failure must
+    // never leave a half-created account that the visitor cannot sign into.
+    const token = signToken(id);
     try {
       await query('INSERT INTO users(id, email, name, password_hash) VALUES($1,$2,$3,$4)', [id, email, name, hashPassword(body.password)]);
     } catch (err) {
       if (err.code === '23505') throw error(409, 'email_taken');
       throw err;
     }
-    const token = signToken(id);
     return send(res, 201, { token, user: { id, name, email } }, { 'Set-Cookie': sessionCookie(req, token) });
   }
   if (m === 'POST' && p === '/api/logout') {
@@ -371,6 +374,21 @@ async function route(req, res) {
       return 201;
     });
     return send(res, status, { id: photo.id });
+  }
+  // Stable, authenticated URL for a customer's signature. The SVG was validated
+  // on report submission and is never exposed to other users.
+  if (m === 'GET' && (mt = p.match(/^\/api\/jobs\/([^/]+)\/signature$/))) {
+    const job = await ownedJob(mt[1], userId);
+    const report = await one('SELECT signature_svg FROM reports WHERE job_id=$1', [job.id]);
+    if (!report?.signature_svg) throw error(404,'signature_not_found');
+    res.writeHead(200, {
+      'Content-Type':'image/svg+xml; charset=utf-8',
+      'Content-Disposition':'inline; filename="fieldops-signature.svg"',
+      'X-Content-Type-Options':'nosniff',
+      'Cache-Control':'private, no-store',
+      'Content-Security-Policy':"default-src 'none'; sandbox",
+    });
+    return res.end(report.signature_svg);
   }
   if (m === 'GET' && (mt = p.match(/^\/api\/photos\/([^/]+)$/))) {
     const ph = await one('SELECT p.mime,p.data FROM photos p JOIN jobs j ON j.id=p.job_id WHERE p.id=$1 AND j.assigned_to=$2', [mt[1],userId]);

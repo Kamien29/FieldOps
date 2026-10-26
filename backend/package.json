@@ -3,13 +3,17 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/index.js",
     "migrate": "node --env-file-if-exists=.env src/migrate.js",
     "seed:demo": "node --env-file-if-exists=.env src/seed-demo.js",
     "import:sqlite": "node src/import-sqlite.js",
-    "test": "node --test test/auth.test.js test/report-validation.test.js test/report-service.test.js"
+    "test": "node --test test/auth.test.js test/report-validation.test.js test/report-service.test.js test/migration-policy.test.js test/http.test.js"
   },
-  "dependencies": { "pg": "^8.16.3" }
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
 }

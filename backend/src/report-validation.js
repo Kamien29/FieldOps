@@ -1,4 +1,6 @@
-export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+// Each photo is uploaded as Base64 JSON. Vercel Functions cap request bodies at 4.5 MB;
+// 2.5 MiB binary becomes ~3.34 MiB in Base64, leaving safe request overhead.
+export const MAX_PHOTO_BYTES = Math.floor(2.5 * 1024 * 1024);
 export const MAX_PHOTOS_PER_JOB = 10;
 export const MAX_PHOTO_BYTES_PER_JOB = 40 * 1024 * 1024;
 

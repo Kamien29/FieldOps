@@ -8,7 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 import type { RootStackParamList } from './src/nav';
 import { AuthContext } from './src/auth';
 import { SyncProvider } from './src/SyncContext';
-import { pendingCount, wipeLocalData } from './src/db';
+import { pendingCount, setMeta, wipeLocalData } from './src/db';
 import { colors } from './src/theme';
 import { t } from './src/strings';
 import LoginScreen from './src/screens/LoginScreen';
@@ -39,6 +39,18 @@ export default function App() {
     setLoggedIn(false);
   }, []);
 
+  // An expired bearer token is NOT a voluntary logout. Keep SQLite/outbox/photos,
+  // so the user can re-authenticate and safely send saved offline reports later.
+  const requireRelogin = useCallback(async () => {
+    const token = await SecureStore.getItemAsync('token');
+    // Legacy installations may have pending offline data without account_user_id.
+    // Recover the account hint from the securely stored token before clearing it.
+    const oldUserId = token?.split('.')[0];
+    if (oldUserId) await setMeta('account_user_id', oldUserId);
+    await SecureStore.deleteItemAsync('token');
+    setLoggedIn(false);
+  }, []);
+
   const auth = useMemo(
     () => ({ logout, onLoggedIn: () => setLoggedIn(true) }),
     [logout],
@@ -54,7 +66,7 @@ export default function App() {
       <AuthContext.Provider value={auth}>
         <NavigationContainer>
           {loggedIn ? (
-            <SyncProvider onAuthExpired={() => logout(true)}>
+            <SyncProvider onAuthExpired={requireRelogin}>
               <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text }}>
                 <Stack.Screen name="Jobs" component={JobListScreen} options={{ title: t.jobsTitle }} />
                 <Stack.Screen name="JobDetail" component={JobDetailScreen} options={{ title: t.jobTitle }} />
