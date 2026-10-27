@@ -178,21 +178,39 @@
   $('#teamOrgSelect').addEventListener('change',()=>safe(async()=>{
     state.organizationId=$('#teamOrgSelect').value;state.chatRecipient='';await refreshOrgDetails();
   },'#teamFeedback'));
-  $('#teamCreateForm').addEventListener('submit',e=>{
-    e.preventDefault();safe(async()=>{
-      const name=e.currentTarget.elements.name.value.trim();
-      const {organization}=await api('/api/organizations',{method:'POST',body:{name}});
-      e.currentTarget.reset();state.organizationId=organization.id;
-      await refreshOrganizations();await refreshOrgDetails();
-      errorLine('#teamFeedback','Utworzono firmę. Możesz teraz zapraszać członków.');
-    },'#teamFeedback');
+  // Retain the actual form, not event.currentTarget: browsers clear currentTarget
+  // once the synchronous event dispatch ends, including across an `await`.
+  // Disable the submit button until completion so a slow request cannot be replayed.
+  function bindForm(selector, feedback, action) {
+    const form = $(selector);
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      if (form.dataset.submitting === '1') return;
+      form.dataset.submitting = '1';
+      const button = form.querySelector('button[type="submit"], button:not([type])');
+      if (button) button.disabled = true;
+      safe(() => action(form), feedback).finally(() => {
+        delete form.dataset.submitting;
+        if (button) button.disabled = false;
+      });
+    });
+  }
+  bindForm('#teamCreateForm', '#teamFeedback', async form => {
+    const name = form.elements.name.value.trim();
+    const {organization, created} = await api('/api/organizations', {method:'POST', body:{name}});
+    form.reset();
+    state.organizationId = organization.id;
+    await refreshOrganizations();
+    await refreshOrgDetails();
+    errorLine('#teamFeedback', created === false
+      ? 'Firma o tej nazwie już istnieje na Twoim koncie. Wybrano istniejącą firmę.'
+      : 'Utworzono firmę. Możesz teraz zapraszać członków.');
   });
-  $('#teamInviteForm').addEventListener('submit',e=>{
-    e.preventDefault();safe(async()=>{
-      const email=e.currentTarget.elements.email.value.trim();
-      await api(`/api/organizations/${encodeURIComponent(state.organizationId)}/invites`,{method:'POST',body:{email}});
-      e.currentTarget.reset();errorLine('#teamFeedback','Zaproszenie zostało zapisane. Osoba zobaczy je po zalogowaniu.');
-    },'#teamFeedback');
+  bindForm('#teamInviteForm', '#teamFeedback', async form => {
+    const email = form.elements.email.value.trim();
+    await api(`/api/organizations/${encodeURIComponent(state.organizationId)}/invites`, {method:'POST', body:{email}});
+    form.reset();
+    errorLine('#teamFeedback', 'Zaproszenie zostało zapisane. Osoba zobaczy je po zalogowaniu.');
   });
   $('#teamInvitesList').addEventListener('click',e=>{
     const button=e.target.closest('[data-invitation]');if (!button)return;
@@ -203,14 +221,14 @@
       errorLine('#teamFeedback',button.dataset.action==='accept'?'Dołączono do firmy.':'Odrzucono zaproszenie.');
     },'#teamFeedback').finally(()=>{button.disabled=false;});
   });
-  $('#teamJobForm').addEventListener('submit',e=>{
-    e.preventDefault();safe(async()=>{
-      const fields=Object.fromEntries(new FormData(e.currentTarget));
-      const job={...fields,scheduledAt:fields.scheduledAt+'T12:00:00.000Z'};
-      await api(`/api/organizations/${encodeURIComponent(state.organizationId)}/jobs`,{method:'POST',body:job});
-      e.currentTarget.reset();await refreshOrgDetails();await loadJobs();
-      errorLine('#teamFeedback','Utworzono zlecenie firmowe.');
-    },'#teamFeedback');
+  bindForm('#teamJobForm', '#teamFeedback', async form => {
+    const fields = Object.fromEntries(new FormData(form));
+    const job = {...fields, scheduledAt:fields.scheduledAt+'T12:00:00.000Z'};
+    await api(`/api/organizations/${encodeURIComponent(state.organizationId)}/jobs`, {method:'POST', body:job});
+    form.reset();
+    await refreshOrgDetails();
+    await loadJobs();
+    errorLine('#teamFeedback', 'Utworzono zlecenie firmowe.');
   });
   $('#teamJobsList').addEventListener('click',e=>{const b=e.target.closest('[data-offer-job]');if(b)startOffer(b.dataset.offerJob);});
   $('#teamMembersList').addEventListener('click',e=>{
@@ -231,22 +249,20 @@
     state.chatRecipient=$('#teamChatRecipient').value;
     state.messageSnapshot='';safe(refreshChat,'#teamFeedback');
   });
-  $('#teamChatForm').addEventListener('submit',e=>{
-    e.preventDefault();safe(async()=>{
-      if (!state.organizationId) throw new Error('Wybierz firmę.');
-      const content=e.currentTarget.elements.content.value.trim();
-      await api(channelUrl(),{method:'POST',body:{content}});
-      e.currentTarget.reset();await refreshChat();
-    },'#teamFeedback');
+  bindForm('#teamChatForm', '#teamFeedback', async form => {
+    if (!state.organizationId) throw new Error('Wybierz firmę.');
+    const content = form.elements.content.value.trim();
+    await api(channelUrl(), {method:'POST', body:{content}});
+    form.reset();
+    await refreshChat();
   });
   $('#teamChatRefresh').addEventListener('click',()=>safe(refreshChat,'#teamFeedback'));
-  $('#offerForm').addEventListener('submit',e=>{
-    e.preventDefault();safe(async()=>{
-      const input=Object.fromEntries(new FormData(e.currentTarget));
-      await api('/api/job-offers',{method:'POST',body:input});
-      e.currentTarget.reset();await refreshOffers();
-      errorLine('#offersFeedback','Propozycja została wysłana. Odbiorca zobaczy ją w FieldOps.');
-    },'#offersFeedback');
+  bindForm('#offerForm', '#offersFeedback', async form => {
+    const input = Object.fromEntries(new FormData(form));
+    await api('/api/job-offers', {method:'POST', body:input});
+    form.reset();
+    await refreshOffers();
+    errorLine('#offersFeedback', 'Propozycja została wysłana. Odbiorca zobaczy ją w FieldOps.');
   });
   $('#offersList').addEventListener('click',e=>{
     const b=e.target.closest('[data-offer-id]');if(!b)return;

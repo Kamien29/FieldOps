@@ -21,6 +21,7 @@ const member=(org,user)=>state.members.get(org+'|'+user);
 const rows=(items)=>({rows:items});
 export async function one(sql,p=[]) {
   if (sql.startsWith('SELECT role FROM organization_members')) {let role=member(p[0],p[1]);return role?{role}:null;}
+  if (sql.includes('FROM organizations') && sql.includes('WHERE created_by=')) return [...state.orgs.values()].find(o=>o.created_by===p[0]&&o.name.toLowerCase()===p[1].toLowerCase())??null;
   if (sql.startsWith('SELECT email FROM users')) return state.users.get(p[0])??null;
   if (sql.includes('SELECT 1 FROM organization_members WHERE')) return member(p[0],p[1])?{ok:1}:null;
   if (sql.includes('SELECT * FROM organization_invitations')) return state.invites.get(p[0])??null;
@@ -48,6 +49,7 @@ export async function all(sql,p=[]) {
   throw Error('Unhandled all SQL: '+sql);
 }
 export async function query(sql,p=[]) {
+  if (sql.startsWith('SELECT pg_advisory_xact_lock')) return rows([]);
   if (sql.startsWith('INSERT INTO organizations')) {state.orgs.set(p[0],{id:p[0],name:p[1],created_by:p[2],created_at:p[3]});return rows([]);}
   if (sql.startsWith('INSERT INTO organization_members')) {state.members.set(p[0]+'|'+p[1],sql.includes("'owner'")?'owner':'member');return rows([]);}
   if (sql.startsWith('INSERT INTO organization_invitations')) {state.invites.set(p[0],{id:p[0],organization_id:p[1],email:p[2],invited_by:p[3],status:'pending',created_at:p[4]});return rows([]);}
@@ -178,4 +180,19 @@ test('stale job offer expires without changing job owner',async()=>{
   assert.equal(r.status,409);
   assert.equal(fixtures.offers.get(offer.data.offer.id).status,'expired');
   assert.equal(fixtures.jobs.get('J-stale-12345').assigned_to,'u-owner');
+});
+
+
+test('repeated company create by the same owner returns the existing company, not a duplicate', async()=>{
+  const first=await run('/api/organizations','POST','u-owner',{name:'Unikalna firma testowa'});
+  assert.equal(first.status,201);
+  assert.equal(first.data.created,true);
+  const repeated=await run('/api/organizations','POST','u-owner',{name:'  UNIKALNA FIRMA TESTOWA  '});
+  assert.equal(repeated.status,200);
+  assert.equal(repeated.data.created,false);
+  assert.equal(repeated.data.organization.id,first.data.organization.id);
+  assert.equal([...fixtures.orgs.values()].filter(o=>o.created_by==='u-owner' && o.name.toLowerCase()==='unikalna firma testowa').length,1);
+  const secondOwner=await run('/api/organizations','POST','u-stranger',{name:'Unikalna firma testowa'});
+  assert.equal(secondOwner.status,201);
+  assert.notEqual(secondOwner.data.organization.id,first.data.organization.id);
 });

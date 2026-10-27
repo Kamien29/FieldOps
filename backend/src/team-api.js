@@ -100,13 +100,24 @@ export async function handleTeamRoute({req,res,p,m,userId,readJson,send,fail,now
       send(res,200,{organizations:rows.map(r=>({id:r.id,name:r.name,role:r.role,memberCount:r.member_count,createdAt:r.created_at}))});return true;
     }
     if (m==='POST') {
-      const body=await readJson(req);const name=requiredText(body.name,120,'invalid_organization_name',fail,2);
-      const org=await transaction(async(db)=>{
+      const body=await readJson(req);
+      const name=requiredText(body.name,120,'invalid_organization_name',fail,2);
+      const result=await transaction(async(db)=>{
+        // Serialize company creation per owner across Vercel instances.
+        // Retrying after a lost response must not create another company.
+        await query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`org-create:${userId}`],db);
+        const existing=await one(`SELECT id,name,created_at FROM organizations
+          WHERE created_by=$1 AND lower(name)=lower($2)
+          ORDER BY created_at,id LIMIT 1`,[userId,name],db);
+        if (existing) return {created:false,organization:{
+          id:existing.id,name:existing.name,role:'owner',memberCount:1,createdAt:existing.created_at,
+        }};
         const orgId=id('org'),t=now();
         await query('INSERT INTO organizations(id,name,created_by,created_at) VALUES($1,$2,$3,$4)',[orgId,name,userId,t],db);
         await query("INSERT INTO organization_members(organization_id,user_id,role,joined_at) VALUES($1,$2,'owner',$3)",[orgId,userId,t],db);
-        return {id:orgId,name,role:'owner',memberCount:1,createdAt:t};
-      });send(res,201,{organization:org});return true;
+        return {created:true,organization:{id:orgId,name,role:'owner',memberCount:1,createdAt:t}};
+      });
+      send(res,result.created?201:200,result);return true;
     }
   }
   if (p==='/api/invitations' && m==='GET') {
