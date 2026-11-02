@@ -19,6 +19,7 @@ import { colors, s } from '../theme';
 import { t } from '../strings';
 import { fmtDate, uid } from '../util';
 import type { Job, Photo, Report } from '../types';
+import {listJobAttachments,pickAndUpload,shareAttachment,type Attachment} from '../attachments';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'JobDetail'>;
 
@@ -28,6 +29,8 @@ export default function JobDetailScreen({ route, navigation }: Props) {
   const [job, setJob] = useState<Job | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [attachments,setAttachments]=useState<Attachment[]>([]);
+  const [attachmentBusy,setAttachmentBusy]=useState(false);
   const [note, setNote] = useState('');
   const [recipientFullName, setRecipientFullName] = useState('');
   const [busy, setBusy] = useState<'photo' | 'location' | null>(null);
@@ -52,6 +55,9 @@ export default function JobDetailScreen({ route, navigation }: Props) {
   }, [jobId]);
 
   useEffect(() => { void load(); return onDataChange(() => { void load(); }); }, [load]);
+  const reloadAttachments=useCallback(()=>listJobAttachments(jobId).then(setAttachments).catch(()=>{}),[jobId]);
+  useEffect(()=>{void reloadAttachments();},[reloadAttachments]);
+  const addAttachment=async()=>{setAttachmentBusy(true);try{if(await pickAndUpload({jobId}))await reloadAttachments();}catch(e){Alert.alert('Załącznik',e instanceof Error?e.message:String(e));}finally{setAttachmentBusy(false);}};
 
   const flushNote = useCallback(async () => {
     clearTimeout(noteTimer.current);
@@ -189,6 +195,12 @@ export default function JobDetailScreen({ route, navigation }: Props) {
             <Text style={s.text}>{t.when}: {fmtDate(job.scheduledAt)}</Text>
           </View>
 
+          <View style={s.card}>
+            <Text style={s.h2}>📎 Załączniki zlecenia</Text>
+            {attachments.map(a=><Pressable key={a.id} onPress={()=>void shareAttachment(a).catch(e=>Alert.alert('Plik',String(e)))} style={{paddingVertical:9,borderBottomWidth:1,borderColor:colors.border}}><Text style={[s.text,{color:colors.primary}]}>📄 {a.fileName}</Text><Text style={s.muted}>{Math.ceil(a.size/1024)} KB · Otwórz / udostępnij</Text></Pressable>)}
+            <Btn title={attachmentBusy?'Wysyłanie…':'+ Dodaj załącznik'} disabled={attachmentBusy||job.syncState!=='synced'} kind="secondary" onPress={()=>void addAttachment()}/>
+          </View>
+          {!locked && job.syncState==='synced' && <View style={{marginBottom:12}}><Btn title="↗ Przekaż to zlecenie" kind="secondary" onPress={()=>navigation.navigate('Team',{initialMode:'offers',jobId})}/></View>}
           {job.status !== 'done' && job.status !== 'cancelled' && job.syncState !== 'conflict' && (
             <View style={{marginBottom:12}}><Btn title="Edytuj zlecenie (także offline)" kind="secondary"
               onPress={()=>navigation.navigate('JobEditor',{jobId})}/></View>

@@ -6,7 +6,7 @@ import {assertMigrationAllowed} from './migration-policy.js';
 async function main() {
   const target=assertMigrationAllowed();
   console.log(`Migration target: ${target.host}/${target.database} (password hidden)`);
-  const migrations=['001_initial.sql','002_report_completion.sql','003_teams_and_collaboration.sql'];
+  const migrations=['001_initial.sql','002_report_completion.sql','003_teams_and_collaboration.sql','004_attachments.sql'];
   const statements=await Promise.all(migrations.map(name=>readFile(
     fileURLToPath(new URL(`../db/migrations/${name}`,import.meta.url)),'utf8')));
   const pool=getPool();

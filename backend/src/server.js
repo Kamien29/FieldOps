@@ -7,6 +7,7 @@ import {
 } from './report-validation.js';
 import { createReport } from './report-service.js';
 import { handleTeamRoute } from './team-api.js';
+import { handleAttachmentRoute } from './attachments-api.js';
 
 const MAX_BODY = 15 * 1024 * 1024;
 const STATUSES = ['new', 'in_progress', 'done', 'cancelled'];
@@ -68,7 +69,7 @@ async function jobJson(row, db) {
   return {
     id: row.id, title: row.title, description: row.description ?? '', customer: row.customer,
     address: row.address, scheduledAt: row.scheduled_at, status: row.status, version: row.version,
-    deviceId: row.device_id ?? null,
+    deviceId: row.device_id ?? null, handoffDevice: row.handoff_device_snapshot ?? null,
     createdAt: row.created_at || null, updatedAt: row.updated_at,
     report: report ? {
       note: report.note, lat: report.lat, lng: report.lng,
@@ -157,6 +158,7 @@ async function route(req, res) {
   if (!userId || !await one('SELECT 1 FROM users WHERE id=$1', [userId])) throw error(401, 'unauthorized');
   if (cookieToken && m !== 'GET' && m !== 'HEAD' && req.headers['x-requested-with'] !== 'fieldops-web') throw error(403, 'csrf_blocked');
 
+  if (await handleAttachmentRoute({req,res,p,m,userId,readJson,send,parsed,now})) return;
   if (await handleTeamRoute({req,res,p,m,userId,readJson,send,fail:error,now})) return;
 
   if (m === 'GET' && p === '/api/me') {

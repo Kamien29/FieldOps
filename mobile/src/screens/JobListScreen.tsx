@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../nav';
 import { listJobs } from '../db';
@@ -19,6 +19,7 @@ const syncColor: Record<SyncState, string> = { synced: colors.ok, pending: color
 
 export default function JobListScreen({ navigation }: Props) {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [search,setSearch]=useState('');
   const { syncNow, syncing } = useSync();
   const { logout } = useAuth();
 
@@ -39,14 +40,16 @@ export default function JobListScreen({ navigation }: Props) {
     <View style={s.screen}>
       <SyncBar />
       <View style={{paddingHorizontal:16,paddingTop:10}}>
-        <Btn title="+ Dodaj zlecenie (także offline)" onPress={()=>navigation.navigate('JobEditor')}/>
+        <Text style={[s.h1,{marginBottom:8}]}>Moja praca</Text>
+        <TextInput style={[s.input,{marginBottom:10}]} placeholder="Szukaj zlecenia, klienta lub adresu…" value={search} onChangeText={setSearch}/>
+        <Btn title="+ Nowe zlecenie" onPress={()=>navigation.navigate('JobEditor')}/>
         <View style={{flexDirection:'row',gap:8,marginTop:8}}>
           <View style={{flex:1}}><Btn kind="secondary" title="Firmy i czat" onPress={()=>navigation.navigate('Team')}/></View>
           <View style={{flex:1}}><Btn kind="secondary" title="Profil" onPress={()=>navigation.navigate('Profile')}/></View>
         </View>
       </View>
       <FlatList
-        data={jobs}
+        data={jobs.filter(j=>`${j.title} ${j.customer} ${j.address} ${j.id}`.toLowerCase().includes(search.toLowerCase()))}
         keyExtractor={(j) => j.id}
         contentContainerStyle={s.pad}
         refreshControl={<RefreshControl refreshing={syncing} onRefresh={syncNow} tintColor={colors.primary} />}

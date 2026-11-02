@@ -143,13 +143,14 @@ export async function handleTeamRoute({req,res,p,m,userId,readJson,send,fail,now
   }
   if (p==='/api/job-offers' && m==='GET') {
     const rows=await all(`SELECT f.id,f.job_id,f.sender_id,f.recipient_id,f.organization_id,f.status,f.created_at,
-       j.title,j.status job_status,s.name sender_name,r.name recipient_name,o.name organization_name
+       j.title,j.status job_status,j.customer,j.address,j.description,j.scheduled_at,j.handoff_device_snapshot,s.name sender_name,r.name recipient_name,o.name organization_name
        FROM job_offers f JOIN jobs j ON j.id=f.job_id JOIN users s ON s.id=f.sender_id
        JOIN users r ON r.id=f.recipient_id LEFT JOIN organizations o ON o.id=f.organization_id
        WHERE f.sender_id=$1 OR f.recipient_id=$1 ORDER BY f.created_at DESC LIMIT 100`,[userId]);
     send(res,200,{offers:rows.map(r=>({id:r.id,jobId:r.job_id,title:r.title,jobStatus:r.job_status,
       senderId:r.sender_id,senderName:r.sender_name,recipientId:r.recipient_id,recipientName:r.recipient_name,
-      organizationId:r.organization_id,organizationName:r.organization_name,status:r.status,createdAt:r.created_at}))});return true;
+      organizationId:r.organization_id,organizationName:r.organization_name,status:r.status,createdAt:r.created_at,
+       customer:r.customer,address:r.address,description:r.description,scheduledAt:r.scheduled_at,handoffDevice:r.handoff_device_snapshot}))});return true;
   }
   if (p==='/api/job-offers' && m==='POST') {
     const b=await readJson(req);const recipientEmail=normalizedEmail(b.toEmail,fail);
@@ -157,8 +158,7 @@ export async function handleTeamRoute({req,res,p,m,userId,readJson,send,fail,now
     const offer=await transaction(async(db)=>{
       const job=await one('SELECT * FROM jobs WHERE id=$1 FOR UPDATE',[b.jobId],db);
       if (!job || job.assigned_to!==userId) throw fail(404,'job_not_found');
-      if (job.status==='done' || job.status==='cancelled' || await one('SELECT 1 FROM reports WHERE job_id=$1',[job.id],db) ||
-          await one('SELECT 1 FROM photos WHERE job_id=$1 LIMIT 1',[job.id],db)) throw fail(409,'handoff_not_allowed');
+      if (job.status==='done' || job.status==='cancelled' || await one('SELECT 1 FROM reports WHERE job_id=$1',[job.id],db)) throw fail(409,'handoff_not_allowed');
       const receiver=await one('SELECT id,name FROM users WHERE lower(email)=lower($1)',[recipientEmail],db);
       if (!receiver) throw fail(404,'recipient_not_found');
       if (receiver.id===userId) throw fail(400,'cannot_offer_to_self');
@@ -188,7 +188,9 @@ export async function handleTeamRoute({req,res,p,m,userId,readJson,send,fail,now
           return;
         }
         if (job.organization_id) await sharedMember(job.organization_id,f.sender_id,f.recipient_id,db,fail);
-        await query('UPDATE jobs SET assigned_to=$1,device_id=NULL,version=version+1,updated_at=$2 WHERE id=$3',[userId,now(),job.id],db);
+        const device=job.device_id ? await one('SELECT serial,name,model,location FROM devices WHERE id=$1',[job.device_id],db) : null;
+         const snapshot=device ? JSON.stringify({serial:device.serial,name:device.name,model:device.model,location:device.location}) : (job.handoff_device_snapshot ? JSON.stringify(job.handoff_device_snapshot) : null);
+         await query('UPDATE jobs SET assigned_to=$1,device_id=NULL,handoff_device_snapshot=$2::jsonb,version=version+1,updated_at=$3 WHERE id=$4',[userId,snapshot,now(),job.id],db);
       }
       await query('UPDATE job_offers SET status=$1,responded_at=$2 WHERE id=$3',[{accept:'accepted',decline:'declined',cancel:'cancelled'}[action],now(),offerId],db);
     });
