@@ -153,7 +153,7 @@
         : `<button class="secondary" data-offer-id="${escapeText(o.id)}" data-offer-action="cancel">Wycofaj</button>` : '';
       return `<div class="team-row"><div><strong>${escapeText(o.title)}</strong>
         <p>${incoming?'Od: '+escapeText(o.senderName):'Do: '+escapeText(o.recipientName)} · ${escapeText(statusLabels[o.status]||o.status)}
-        ${o.organizationName?' · '+escapeText(o.organizationName):''}</p></div><div class="team-row-actions">${actions}</div></div>`;
+        ${o.organizationName?' · '+escapeText(o.organizationName):''}</p><details><summary>Szczegóły przekazywanego zlecenia</summary><p>Klient: ${escapeText(o.customer)}<br>Adres: ${escapeText(o.address)}<br>Termin: ${escapeText(dateTime(o.scheduledAt))}<br>Opis: ${escapeText(o.description||'—')}<br>Urządzenie: ${escapeText(o.handoffDevice?.name||'—')}</p></details></div><div class="team-row-actions">${actions}</div></div>`;
     }).join('') : 'Nie masz jeszcze żadnych propozycji przekazania.';
   }
   async function refreshOffers() {state.offers=(await api('/api/job-offers')).offers||[];renderOffers();showOfferJobs();}
