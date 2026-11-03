@@ -5,7 +5,7 @@ export interface Organization { id:string;name:string;role:'owner'|'admin'|'memb
 export interface Member {id:string;name:string;email:string;role:string;hasAvatar:boolean;}
 export interface Invitation {id:string;organizationId:string;organizationName:string;invitedBy:string;}
 export interface JobOffer {id:string;jobId:string;title:string;senderId:string;senderName:string;
-  recipientId:string;recipientName:string;status:string;organizationName?:string;}
+  recipientId:string;recipientName:string;status:string;organizationName?:string;customer?:string;address?:string;description?:string;scheduledAt?:string;handoffDevice?:{name?:string;serial?:string}|null;}
 export interface Message {id:string;senderId:string;senderName:string;recipientId:string|null;content:string;createdAt:string;}
 export interface CompanyJob {id:string;title:string;customer:string;status:string;assigneeName:string;assigneeId:string;}
 

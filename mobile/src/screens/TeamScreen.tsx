@@ -12,6 +12,7 @@ import {Btn} from '../ui';
 import {colors,s} from '../theme';
 import type {Job} from '../types';
 import * as teams from '../team-api';
+import {listChatAttachments,pickAndUpload,shareAttachment,type Attachment} from '../attachments';
 
 type Props=NativeStackScreenProps<RootStackParamList,'Team'>;
 const Field=({placeholder,value,onChangeText,secure=false}:{placeholder:string;value:string;onChangeText:(v:string)=>void;secure?:boolean}) =>
@@ -21,8 +22,8 @@ const Header=({children}:{children:string})=><Text style={[s.h2,{marginTop:12}]}
 const Info=({children}:{children:string})=><Text style={[s.muted,{marginVertical:6}]}>{children}</Text>;
 const Card=({children}:{children:React.ReactNode})=><View style={s.card}>{children}</View>;
 
-export default function TeamScreen({navigation}:Props) {
-  const [mode,setMode]=useState<'companies'|'chat'|'offers'>('companies');
+export default function TeamScreen({navigation,route}:Props) {
+  const [mode,setMode]=useState<'companies'|'chat'|'offers'>(route.params?.initialMode||'companies');
   const [orgs,setOrgs]=useState<teams.Organization[]>([]);
   const [orgId,setOrgId]=useState('');
   const [invites,setInvites]=useState<teams.Invitation[]>([]);
@@ -30,13 +31,14 @@ export default function TeamScreen({navigation}:Props) {
   const [companyJobs,setCompanyJobs]=useState<teams.CompanyJob[]>([]);
   const [chatOther,setChatOther]=useState('');
   const [messages,setMessages]=useState<teams.Message[]>([]);
+  const [chatAttachments,setChatAttachments]=useState<Attachment[]>([]);
   const [offers,setOffers]=useState<teams.JobOffer[]>([]);
   const [localJobs,setLocalJobs]=useState<Job[]>([]);
   const [name,setName]=useState('');
   const [inviteEmail,setInviteEmail]=useState('');
   const [chatText,setChatText]=useState('');
   const [offerEmail,setOfferEmail]=useState('');
-  const [offerJobId,setOfferJobId]=useState('');
+  const [offerJobId,setOfferJobId]=useState(route.params?.jobId||'');
   const [busy,setBusy]=useState(false);
   const [myUserId,setMyUserId]=useState('');
   const [jobForm,setJobForm]=useState({title:'',customer:'',address:'',date:'',description:''});
@@ -63,6 +65,10 @@ export default function TeamScreen({navigation}:Props) {
   },[reload]);
   useEffect(()=>{reloadOrg().catch(e=>Alert.alert('Firma',String(e)));},[reloadOrg]);
   useEffect(()=>{reloadChat().catch(()=>{});},[reloadChat]);
+  const reloadFiles=useCallback(async()=>{if(orgId)setChatAttachments(await listChatAttachments(orgId,chatOther));else setChatAttachments([]);},[orgId,chatOther]);
+  useEffect(()=>{reloadFiles().catch(()=>{});},[reloadFiles]);
+  const addChatFile=async()=>{if(!orgId)return;setBusy(true);try{if(await pickAndUpload({organizationId:orgId,recipientId:chatOther})){
+    await Promise.all([reloadFiles(),reloadChat()]);}}catch(e){Alert.alert('Załącznik',String(e));}finally{setBusy(false);}};
   useEffect(()=>{if (mode!=='chat'||!orgId)return;const t=setInterval(()=>reloadChat().catch(()=>{}),15000);return()=>clearInterval(t);},[mode,orgId,reloadChat]);
   const act=async(fn:()=>Promise<unknown>,success:string)=>{
     setBusy(true);
@@ -148,6 +154,12 @@ export default function TeamScreen({navigation}:Props) {
               <Text style={s.text}>{m.content}</Text>
             </View>):<Info>Brak wiadomości w tej rozmowie.</Info>}
           </View>
+          <Header>📎 Załączniki rozmowy</Header>
+          {chatAttachments.map(a=><Pressable key={a.id} onPress={()=>void shareAttachment(a).catch(e=>Alert.alert('Plik',String(e)))}
+            style={{paddingVertical:9,borderBottomWidth:1,borderColor:colors.border}}>
+            <Text style={{color:colors.primary}}>📄 {a.fileName} · {Math.ceil(a.size/1024)} KB</Text>
+          </Pressable>)}
+          <Btn title="+ Dodaj plik do rozmowy" kind="secondary" disabled={busy} onPress={()=>void addChatFile()}/>
           <Field placeholder="Napisz wiadomość" value={chatText} onChangeText={setChatText}/>
           <Btn title="Wyślij" disabled={busy||!chatText.trim()} onPress={()=>void act(async()=>{
             await teams.sendMessage(orgId,chatOther,chatText.trim());setChatText('');
@@ -169,6 +181,9 @@ export default function TeamScreen({navigation}:Props) {
         <Card><Header>Otrzymane i wysłane propozycje</Header>
           {offers.length?offers.map(o=><View key={o.id} style={{paddingVertical:12,borderBottomWidth:1,borderColor:colors.border}}>
             <Text style={s.text}>{o.title}</Text><Info>Od: {o.senderName} → {o.recipientName} · {o.status}</Info>
+            <Text style={s.muted}>Klient: {o.customer||'—'} · {o.address||'—'}</Text>
+            <Text style={s.muted}>Termin: {o.scheduledAt||'—'} · Opis: {o.description||'—'}</Text>
+            {!!o.handoffDevice?.name&&<Text style={s.muted}>Urządzenie: {o.handoffDevice.name}</Text>}
             {o.status==='pending'&&o.recipientId===myUserId&&<View style={{flexDirection:'row',gap:7}}>
               <View style={{flex:1}}><Btn title="Akceptuj" disabled={busy} onPress={()=>void act(()=>teams.decideOffer(o.id,'accept'),'Przyjęto zlecenie.')}/></View>
               <View style={{flex:1}}><Btn kind="secondary" title="Odrzuć" disabled={busy} onPress={()=>void act(()=>teams.decideOffer(o.id,'decline'),'Odrzucono propozycję.')}/></View>

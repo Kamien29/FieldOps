@@ -186,7 +186,7 @@ footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
     <form id="offerForm" class="team-fields"><label>Twoje zlecenie<select name="jobId" id="offerJobSelect" required><option value="">Wybierz zlecenie</option></select></label>
     <label>E-mail odbiorcy<input type="email" name="toEmail" maxlength="254" placeholder="wykonawca@przyklad.pl" required></label>
     <button>Wyślij do akceptacji</button></form>
-    <p class="team-muted">Odbiorca musi mieć konto FieldOps. Zlecenie będzie należało do niego dopiero po zaakceptowaniu. Ukończonych zleceń ani zleceń ze zdjęciami nie można przekazać.</p>
+    <p class="team-muted">Odbiorca musi mieć konto FieldOps. Zlecenie będzie należało do niego dopiero po zaakceptowaniu. Ukończonych zleceń ani zleceń z raportem nie można przekazać. Załączniki pozostają przy zleceniu.</p>
   </section>
   <section class="panel team-panel"><h2>Oczekujące i zakończone propozycje</h2>
     <div id="offersList" class="team-muted">Ładowanie propozycji…</div><button id="offersRefresh" type="button" class="secondary">Odśwież propozycje</button>
@@ -1278,4 +1278,5 @@ setAuthMode();
 
 </script>
 <script src="/team.js"></script>
+<script src="/ux.js"></script>
 </body></html>
