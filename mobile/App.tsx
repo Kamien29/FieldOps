@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, View, useColorScheme } from 'react-native';
+import { ActivityIndicator, Alert, View, useColorScheme, useColorScheme } from 'react-native';
 import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -23,6 +23,12 @@ import ProfileScreen from './src/screens/ProfileScreen';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
+  const systemScheme = useColorScheme();
+  const [preference, setPreferenceState] = useState<ThemePreference>('system');
+  const setPreference = useCallback((value: ThemePreference) => { setPreferenceState(value); void SecureStore.setItemAsync('fieldops_theme', value); }, []);
+  useEffect(() => { void SecureStore.getItemAsync('fieldops_theme').then(v => { if (v === 'dark' || v === 'light' || v === 'system') setPreferenceState(v); }); }, []);
+  const effectiveScheme = preference === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : preference;
+  applyTheme(effectiveScheme);
   const [ready, setReady] = useState(false);
   const systemScheme = useColorScheme();
   const [preference, setPreference] = useState<ThemePreference>('system');
@@ -90,7 +96,8 @@ export default function App() {
             </Stack.Navigator>
           )}
         </NavigationContainer>
-      </AuthContext.Provider></ThemeContext.Provider>
+      </AuthContext.Provider>
+      </ThemeContext.Provider></ThemeContext.Provider>
     </SafeAreaProvider>
   );
 }
