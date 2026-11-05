@@ -7,7 +7,7 @@ import { onDataChange } from '../events';
 import { useSync } from '../SyncContext';
 import { useAuth } from '../auth';
 import { Btn,Chip, SyncBar } from '../ui';
-import { colors, s } from '../theme';
+import { colors, s, useThemePreference, type ThemePreference } from '../theme';
 import { t } from '../strings';
 import { fmtDate } from '../util';
 import type { Job, JobStatus, SyncState } from '../types';
@@ -22,6 +22,7 @@ export default function JobListScreen({ navigation }: Props) {
   const [search,setSearch]=useState('');
   const { syncNow, syncing } = useSync();
   const { logout } = useAuth();
+  const { preference, setPreference } = useThemePreference();
 
   const load = useCallback(() => { listJobs().then(setJobs).catch(() => {}); }, []);
   useEffect(() => { load(); return onDataChange(load); }, [load]);
@@ -41,6 +42,14 @@ export default function JobListScreen({ navigation }: Props) {
       <SyncBar />
       <View style={{paddingHorizontal:16,paddingTop:10}}>
         <Text style={[s.h1,{marginBottom:8}]}>Moja praca</Text>
+        <View style={{flexDirection:"row",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+          <Text style={s.muted}>Wygląd:</Text>
+          {([["system","System"],["light","Jasny"],["dark","Ciemny"]] as const).map(([mode,label]) =>
+            <Pressable key={mode} accessibilityRole="button" accessibilityState={{selected:preference===mode}}
+              onPress={()=>setPreference(mode as ThemePreference)} style={{paddingVertical:8,paddingHorizontal:12,borderRadius:10,backgroundColor:preference===mode?colors.primarySoft:colors.card,borderWidth:1,borderColor:preference===mode?colors.primary:colors.border}}>
+              <Text style={{color:colors.text,fontWeight:preference===mode?"700":"400"}}>{label}</Text>
+            </Pressable>)}
+        </View>
         <TextInput style={[s.input,{marginBottom:10}]} placeholder="Szukaj zlecenia, klienta lub adresu…"
           value={search} onChangeText={setSearch} />
         <Btn title="+ Nowe zlecenie" onPress={()=>navigation.navigate('JobEditor')}/>
