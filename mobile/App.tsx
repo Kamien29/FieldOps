@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, View, useColorScheme } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -71,7 +71,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
       <ThemeContext.Provider value={{ preference, setPreference: chooseTheme }}><AuthContext.Provider value={auth}>
-        <NavigationContainer key={resolvedTheme + themeTick}>
+        <NavigationContainer key={resolvedTheme + themeTick} theme={{ ...(resolvedTheme === "dark" ? DarkTheme : DefaultTheme), colors: { ...(resolvedTheme === "dark" ? DarkTheme : DefaultTheme).colors, background: colors.bg, card: colors.card, text: colors.text, border: colors.border, primary: colors.primary } }}>
           {loggedIn ? (
             <SyncProvider onAuthExpired={reauthenticate}>
               <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text }}>
