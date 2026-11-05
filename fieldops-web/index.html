@@ -88,10 +88,25 @@ footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
 .team-avatar-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
 .team-actions{display:flex;gap:8px;flex-wrap:wrap}
 @media(max-width:840px){.team-grid{grid-template-columns:1fr}}
+
+/* Accessible appearance preferences: system is the default. */
+:root{color-scheme:light;--fo-bg:#f4f7fb;--fo-card:#fff;--fo-text:#15202b;--fo-muted:#536273;--fo-border:#d4dce7;--fo-input:#fff;--fo-tab:#e4edff}
+:root[data-theme="dark"]{color-scheme:dark;--fo-bg:#101827;--fo-card:#1d2939;--fo-text:#f1f5f9;--fo-muted:#cbd5e1;--fo-border:#475569;--fo-input:#243244;--fo-tab:#263d64}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--fo-bg:#101827;--fo-card:#1d2939;--fo-text:#f1f5f9;--fo-muted:#cbd5e1;--fo-border:#475569;--fo-input:#243244;--fo-tab:#263d64}}
+body{background:var(--fo-bg);color:var(--fo-text)}
+header,.stat,.panel,.auth-card,.team-bubble,.report-photo,.report-view dl div{background:var(--fo-card);border-color:var(--fo-border);color:var(--fo-text)}
+input,select,textarea{background:var(--fo-input);border-color:var(--fo-border);color:var(--fo-text)}
+label,.muted,.sub,.user,.team-muted,.team-row p,.stat small,.profile-help,.team-bubble small{color:var(--fo-muted)!important}
+.job,.device,.team-row,.team-chat,.report-view-signature{border-color:var(--fo-border)}
+.team-chat,.report-dialog,.conflict-dialog{background:var(--fo-bg);color:var(--fo-text)}
+.tabs{flex-wrap:wrap}.tabs button{color:var(--fo-muted)}.tabs button.active{background:var(--fo-tab);color:var(--fo-text)}
+button.secondary{background:var(--fo-tab);color:var(--fo-text)}
+.theme-select{width:auto;min-width:105px;padding:7px 9px;font-size:13px}
+@media(max-width:800px){header{height:auto;min-height:64px;gap:10px;padding:10px 14px}.user{gap:6px;flex-wrap:wrap}.stats{gap:8px}.stat{padding:12px}.tabs{position:sticky;top:0;background:var(--fo-bg);padding:8px 0;z-index:1}.tabs button{padding:10px 12px}.job-actions{gap:8px}.job-actions button{min-height:38px}}
 </style>
 </head>
 <body>
-<header><div class="brand">Field<span>Ops</span></div><div class="user"><img id="headerAvatar" class="team-avatar team-avatar-small hidden" alt="Zdjęcie profilu"><span id="userName">Tryb demonstracyjny</span><button id="logout" class="secondary hidden">Wyloguj</button></div></header>
+<header><div class="brand">Field<span>Ops</span></div><div class="user"><label for="themeSelect" style="display:flex;align-items:center;gap:6px">Motyw <select id="themeSelect" class="theme-select" aria-label="Motyw aplikacji"><option value="system">Systemowy</option><option value="light">Jasny</option><option value="dark">Ciemny</option></select></label><img id="headerAvatar" class="team-avatar team-avatar-small hidden" alt="Zdjęcie profilu"><span id="userName">Tryb demonstracyjny</span><button id="logout" class="secondary hidden">Wyloguj</button></div></header>
 <div id="auth" class="auth-wrap"><section class="auth-card"><div class="eyebrow">Mobilny pomocnik serwisanta</div><h1 id="authTitle">Zaloguj się</h1><p class="sub">Zarządzaj zleceniami i urządzeniami w jednym miejscu.</p><div id="authMessage"></div><form id="authForm"><label id="nameWrap" class="hidden">Imię / nazwa użytkownika<input name="name" minlength="2"></label><label>E-mail<input name="email" type="email" required autocomplete="email" placeholder="serwisant@firma.pl"></label><label>Hasło<input name="password" type="password" required minlength="8" autocomplete="current-password" placeholder="Minimum 8 znaków"></label><button id="authSubmit">Zaloguj</button></form><div class="auth-switch"><span id="authPrompt">Nie masz konta?</span> <button class="link" id="switchAuth">Utwórz konto</button></div><p class="muted">Konta i zlecenia zapisywane są w bezpiecznej bazie danych PostgreSQL.</p></section></div>
 <main id="app" class="hidden">
 <div class="eyebrow" id="mainEyebrow">Panel serwisanta</div><h1 id="mainTitle">Twoje zlecenia</h1><p class="sub" id="mainSubtitle">Planuj pracę, pilnuj terminów i prowadź rejestr obsługiwanych urządzeń.</p>
@@ -240,6 +255,25 @@ footer{padding:30px;text-align:center;color:#8290a2;font-size:12px}
     <img id="photoDialogImage" alt="Powiększone zdjęcie z raportu">
   </dialog>
   <script>
+(() => {
+  const allowed = ['system','light','dark'];
+  let choice = 'system';
+  try { choice = localStorage.getItem('fieldops_theme') || 'system'; } catch {}
+  if (!allowed.includes(choice)) choice = 'system';
+  document.documentElement.dataset.theme = choice;
+  window.addEventListener('DOMContentLoaded', () => {
+    const select = document.getElementById('themeSelect');
+    if (!select) return;
+    select.value = choice;
+    select.addEventListener('change', () => {
+      choice = allowed.includes(select.value) ? select.value : 'system';
+      document.documentElement.dataset.theme = choice;
+      try { localStorage.setItem('fieldops_theme', choice); } catch {}
+    });
+  });
+})();
+</script>
+<script>
 'use strict';
 // FieldOps panel (legacy appearance) backed by the PostgreSQL API.
 // Authentication uses the secure, HttpOnly session cookie: no tokens in localStorage.
