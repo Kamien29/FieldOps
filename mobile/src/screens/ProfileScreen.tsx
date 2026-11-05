@@ -8,11 +8,12 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import {apiFetch} from '../api';
 import {API_URL} from '../config';
 import {Btn} from '../ui';
-import {colors,s} from '../theme';
+import {colors,s,useThemePreference,type ThemePreference} from '../theme';
 
 interface Profile {id:string;name:string;email:string;hasAvatar:boolean;}
 const MAX_AVATAR=300*1024;
 export default function ProfileScreen() {
+  const {preference,setPreference}=useThemePreference();
   const [profile,setProfile]=useState<Profile|null>(null);
   const [token,setToken]=useState('');
   const [name,setName]=useState('');const [email,setEmail]=useState('');
@@ -77,6 +78,13 @@ export default function ProfileScreen() {
       autoCapitalize="none" autoCorrect={false}/>
   </View>;
   return <ScrollView style={s.screen} contentContainerStyle={{padding:18,paddingBottom:40}}>
+    <View style={s.card}>
+      <Text style={s.h2}>Wygląd aplikacji</Text>
+      <Text style={[s.muted,{marginBottom:10}]}>Domyślnie zgodny z ustawieniami telefonu.</Text>
+      <View style={{flexDirection:"row",gap:8,flexWrap:"wrap"}}>
+        {([["system","Systemowy"],["light","Jasny"],["dark","Ciemny"]] as const).map(([value,label])=><View key={value} style={{flex:1,minWidth:88}}><Btn title={label} kind={preference===value?"primary":"secondary"} onPress={()=>setPreference(value as ThemePreference)}/></View>)}
+      </View>
+    </View>
     <View style={s.card}>
       <Text style={s.h2}>Zdjęcie profilowe</Text>
       {profile?.hasAvatar && !!token && <Image style={{width:110,height:110,borderRadius:55,marginVertical:12,backgroundColor:'#e5e7eb'}}
