@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, View } from 'react-native';
+import { ActivityIndicator, Alert, View, useColorScheme } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -9,7 +9,7 @@ import type { RootStackParamList } from './src/nav';
 import { AuthContext } from './src/auth';
 import { SyncProvider } from './src/SyncContext';
 import { pendingCount, wipeLocalData } from './src/db';
-import { colors } from './src/theme';
+import { colors, applyTheme, ThemeContext, type ThemePreference } from './src/theme';
 import { t } from './src/strings';
 import LoginScreen from './src/screens/LoginScreen';
 import JobListScreen from './src/screens/JobListScreen';
@@ -24,6 +24,13 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   const [ready, setReady] = useState(false);
+  const systemScheme = useColorScheme();
+  const [preference, setPreference] = useState<ThemePreference>('system');
+  const [themeTick, setThemeTick] = useState(0);
+  const resolvedTheme = preference === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : preference;
+  useEffect(() => { applyTheme(resolvedTheme); setThemeTick(t => t + 1); }, [resolvedTheme]);
+  useEffect(() => { SecureStore.getItemAsync('fieldops_theme').then(v => { if (v === 'dark' || v === 'light' || v === 'system') setPreference(v); }).catch(() => {}); }, []);
+  const chooseTheme = useCallback((mode: ThemePreference) => { setPreference(mode); void SecureStore.setItemAsync('fieldops_theme', mode); }, []);
   const [loggedIn, setLoggedIn] = useState(false);
 
   useEffect(() => {
@@ -62,9 +69,9 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <AuthContext.Provider value={auth}>
-        <NavigationContainer>
+      <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
+      <ThemeContext.Provider value={{ preference, setPreference: chooseTheme }}><AuthContext.Provider value={auth}>
+        <NavigationContainer key={resolvedTheme + themeTick}>
           {loggedIn ? (
             <SyncProvider onAuthExpired={reauthenticate}>
               <Stack.Navigator screenOptions={{ headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text }}>
@@ -83,7 +90,7 @@ export default function App() {
             </Stack.Navigator>
           )}
         </NavigationContainer>
-      </AuthContext.Provider>
+      </AuthContext.Provider></ThemeContext.Provider>
     </SafeAreaProvider>
   );
 }
