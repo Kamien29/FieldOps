@@ -1,0 +1,22 @@
+/* FieldOps appearance: system by default, with explicit light/dark overrides. */
+:root{color-scheme:light;--surface:#fff;--page:#f4f7fb;--text:#15202b;--muted:#64748b;--line:#e2e8f0;--field:#fff;--accent:#155eef}
+:root[data-theme="dark"]{color-scheme:dark;--surface:#1e293b;--page:#0f172a;--text:#f1f5f9;--muted:#cbd5e1;--line:#334155;--field:#172033;--accent:#93c5fd}
+:root[data-theme="dark"] body{background:var(--page);color:var(--text)}
+:root[data-theme="dark"] header,:root[data-theme="dark"] .stat,:root[data-theme="dark"] .panel,:root[data-theme="dark"] .auth-card,:root[data-theme="dark"] .report-photo,:root[data-theme="dark"] .report-view dl div,:root[data-theme="dark"] .team-bubble,:root[data-theme="dark"] .conflict-dialog{background:var(--surface);color:var(--text);border-color:var(--line)}
+:root[data-theme="dark"] input,:root[data-theme="dark"] select,:root[data-theme="dark"] textarea{background:var(--field);color:var(--text);border-color:var(--line)}
+:root[data-theme="dark"] .job,:root[data-theme="dark"] .device,:root[data-theme="dark"] .team-row,:root[data-theme="dark"] .report-view dl div{border-color:var(--line)}
+:root[data-theme="dark"] .muted,:root[data-theme="dark"] .sub,:root[data-theme="dark"] label,:root[data-theme="dark"] .user,:root[data-theme="dark"] .team-muted,:root[data-theme="dark"] .team-row p,:root[data-theme="dark"] .stat small{color:var(--muted)}
+:root[data-theme="dark"] .tabs button{color:var(--muted)}
+:root[data-theme="dark"] .tabs button.active,:root[data-theme="dark"] button.secondary,:root[data-theme="dark"] .profile-note,:root[data-theme="dark"] .team-status{background:#334155;color:#f1f5f9}
+:root[data-theme="dark"] .team-chat,:root[data-theme="dark"] .report-dialog{background:var(--page);color:var(--text);border-color:var(--line)}
+:root[data-theme="dark"] .team-bubble.own{background:#1e3a5f;border-color:#3b82f6}
+:root[data-theme="dark"] .badge{background:#334155;color:#e2e8f0}
+:root[data-theme="dark"] .badge.in_progress{background:#1e3a5f;color:#bfdbfe}
+:root[data-theme="dark"] .badge.done{background:#14532d;color:#bbf7d0}
+:root[data-theme="dark"] .badge.to_do{background:#713f12;color:#fef08a}
+:root[data-theme="dark"] .badge.cancelled{background:#7f1d1d;color:#fecaca}
+:root[data-theme="dark"] .report-view-signature{background:#fff}
+:root[data-theme="dark"] .team-bubble small{color:#cbd5e1}
+.theme-picker{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.theme-picker select{width:auto;min-width:112px;padding:7px 8px;background:var(--field);color:var(--text);border:1px solid var(--line);border-radius:8px}
+@media(max-width:600px){.theme-picker span{display:none}.theme-picker select{min-width:90px}.user{gap:6px}}
