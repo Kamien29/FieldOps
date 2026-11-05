@@ -8,12 +8,12 @@ export const ThemeContext = createContext<{ preference: ThemePreference; setPref
 export const useThemePreference = () => useContext(ThemeContext);
 
 const light = {
-  bg: '#FAF7F2', card: '#FFFFFF', text: '#1F2937', muted: '#6B7280', border: '#E5E1D8',
-  primary: '#B45309', primarySoft: '#FEF3C7', ok: '#15803D', warn: '#B45309', danger: '#B91C1C',
+  bg: '#F4F7FC', card: '#FFFFFF', text: '#1F2937', muted: '#6B7280', border: '#DDE5F0',
+  primary: '#1D5FE9', primarySoft: '#E8F0FF', ok: '#15803D', warn: '#B45309', danger: '#B91C1C',
 };
 const dark: typeof light = {
   bg: '#111827', card: '#1F2937', text: '#F9FAFB', muted: '#CBD5E1', border: '#374151',
-  primary: '#FBBF24', primarySoft: '#45331B', ok: '#86EFAC', warn: '#FBBF24', danger: '#FCA5A5',
+  primary: '#93C5FD', primarySoft: '#1E3A5F', ok: '#86EFAC', warn: '#FBBF24', danger: '#FCA5A5',
 };
 export const colors = { ...light };
 const makeStyles = () => StyleSheet.create({
